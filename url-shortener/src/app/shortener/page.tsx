@@ -1,15 +1,32 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
+
+function useRemoveExtensionAttributes() {
+  useEffect(() => {
+
+    const buttons = document.querySelectorAll('button[fdprocessedid]');
+    buttons.forEach(button => {
+      button.removeAttribute('fdprocessedid');
+    });
+  }, []);
+}
 
 export default function ShortenerPage() {
   const [url, setUrl] = useState("")
   const [shortUrl, setShortUrl] = useState("")
   const [loading, setLoading] = useState(false)
+  const [origin, setOrigin] = useState("")
   const { toast } = useToast()
+
+  useRemoveExtensionAttributes(); // Add this hook
+
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -18,7 +35,7 @@ export default function ShortenerPage() {
       toast({
         title: "Error",
         description: "Please enter a valid URL",
-        type: "error",
+        variant: "destructive", 
       })
       return
     }
@@ -38,12 +55,12 @@ export default function ShortenerPage() {
       }
 
       const data = await res.json()
-      setShortUrl(`${window.location.origin}/${data.shortCode}`)
+      setShortUrl(`${origin}/${data.shortCode}`)
     } catch (error) {
       toast({
         title: "Error",
         description: "Something went wrong while shortening the URL",
-        type: "error",
+        variant: "destructive", 
       })
     } finally {
       setLoading(false)
@@ -56,7 +73,6 @@ export default function ShortenerPage() {
       toast({
         title: "Copied!",
         description: "Short link copied to clipboard",
-        type: "success",
       })
     }
   }

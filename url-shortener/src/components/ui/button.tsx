@@ -34,7 +34,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ...props,
         className: classes,
         ref,
-      })
+      } as any)
     }
 
     return (
