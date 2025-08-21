@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createShortCode } from "@/lib/url-store"
 
-
 async function extractMetadata(url: string): Promise<{
   title?: string;
   description?: string;
@@ -9,11 +8,8 @@ async function extractMetadata(url: string): Promise<{
   favicon?: string;
 }> {
   try {
-   
-    
     const hostname = new URL(url).hostname;
     
- 
     if (hostname.includes('netlify.com') || hostname.includes('netlify.app')) {
       return {
         title: 'Netlify - Deploy your websites with ease',
@@ -40,7 +36,6 @@ async function extractMetadata(url: string): Promise<{
       };
     }
     
-    
     return {
       title: `Page from ${hostname}`,
       description: 'Check out this shared link',
@@ -63,10 +58,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-  
-    let parsed: URL
+    
+    let normalizedUrl: string;
     try {
-      parsed = new URL(url)
+      
+      let urlToParse = url;
+      if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
+        urlToParse = 'https://' + urlToParse;
+      }
+      
+      const parsed = new URL(urlToParse);
+      normalizedUrl = parsed.toString();
+      
+      
+      if (normalizedUrl.endsWith('/')) {
+        normalizedUrl = normalizedUrl.slice(0, -1);
+      }
     } catch {
       return NextResponse.json(
         { error: 'Invalid URL' },
@@ -74,11 +81,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-   
-    const metadata = await extractMetadata(url)
+ 
+    const metadata = await extractMetadata(normalizedUrl)
     
     
-    const shortCode = createShortCode(parsed.toString(), metadata)
+    const shortCode = createShortCode(normalizedUrl, metadata)
     
     return NextResponse.json({ 
       shortCode,
