@@ -151,10 +151,7 @@ export async function POST(request: NextRequest) {
     const { url } = await request.json()
 
     if (!url) {
-      return NextResponse.json(
-        { error: 'URL is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'URL is required' }, { status: 400 })
     }
 
     let normalizedUrl: string;
@@ -171,30 +168,26 @@ export async function POST(request: NextRequest) {
         normalizedUrl = normalizedUrl.slice(0, -1);
       }
     } catch {
-      return NextResponse.json(
-        { error: 'Invalid URL' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-    const metadata = await extractMetadata(normalizedUrl)
+   
+    const metaResponse = await fetch(`${request.nextUrl.origin}/api/metadata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: normalizedUrl })
+    })
     
+    const metadata = await metaResponse.json()
+
     const shortCode = await createShortCode(normalizedUrl, metadata)
     
     return NextResponse.json({ 
       shortCode,
-      metadata: {
-        title: metadata.title,
-        description: metadata.description,
-        image: metadata.image,
-        favicon: metadata.favicon
-      }
+      metadata
     })
   } catch (error) {
     console.error('Error shortening URL:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
