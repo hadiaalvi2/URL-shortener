@@ -2,20 +2,18 @@ import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import { getUrl } from "@/lib/url-store"
 import type { Metadata } from "next"
+import Image from "next/image"
 
 interface Props {
   params: Promise<{ shortCode: string }>
 }
 
-// Use a fallback domain if ngrok is not working
-const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"
+const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://285a5fc88aac.ngrok-free.app"
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { shortCode } = await params
   const data = getUrl(shortCode)
-  
-  // Use a reliable metadataBase that social platforms can access
-  const metadataBase = new URL("https://your-actual-domain.com") // ← Change this!
+  const metadataBase = new URL(baseUrl)
 
   if (!data) {
     return {
@@ -28,12 +26,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = data.title || "Shortened Link"
   const description = data.description || "Open this link"
   
-  // Use a reliable image host
+  // Ensure image URLs are absolute
   const imageUrl = data.image 
     ? data.image.startsWith('http') 
       ? data.image 
-      : "https://your-actual-domain.com/og-default.png" // ← Change this!
-    : "https://your-actual-domain.com/og-default.png" // ← Change this!
+      : new URL(data.image, metadataBase).toString()
+    : new URL("/og-default.png", metadataBase).toString()
 
   return {
     metadataBase,
@@ -43,7 +41,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       type: 'website',
       title,
       description,
-      url: `https://your-actual-domain.com/${shortCode}`, // ← Change this!
+      url: new URL(`/${shortCode}`, metadataBase).toString(),
       images: [{
         url: imageUrl,
         width: 1200,
@@ -82,7 +80,7 @@ export default async function RedirectPage(props: Props) {
         <div className="max-w-md text-center">
           <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
           <p className="text-muted-foreground">
-            The short code "{shortCode}" was not found.
+            The short code &quot;{shortCode}&quot; was not found.
           </p>
         </div>
       </main>
@@ -116,9 +114,11 @@ export default async function RedirectPage(props: Props) {
             <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
               {imageUrl && (
                 <div className="w-full h-48 bg-gray-200 overflow-hidden">
-                  <img 
+                  <Image 
                     src={imageUrl} 
                     alt={title}
+                    width={800}
+                    height={400}
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -156,4 +156,3 @@ export default async function RedirectPage(props: Props) {
 
   redirect(data.originalUrl)
 }
-
