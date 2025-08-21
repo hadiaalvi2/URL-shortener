@@ -17,7 +17,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 })
     }
 
-    const shortCode = saveUrl(parsed.toString())
+    const shortCode = await saveUrl(parsed.toString())
     return NextResponse.json({ shortCode })
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 500 })

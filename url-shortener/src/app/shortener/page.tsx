@@ -31,11 +31,22 @@ export default function ShortenerPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
+    const urlRegex = /^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|[a-zA-Z0-9]+\.[^\s]{2,})$/i;
+
     if (!url) {
       toast({
         title: "Error",
-        description: "Please enter a valid URL",
+        description: "Please enter a URL.",
         variant: "destructive", 
+      })
+      return
+    }
+
+    if (!urlRegex.test(url)) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid URL (e.g., https://example.com).",
+        variant: "destructive",
       })
       return
     }
@@ -51,15 +62,16 @@ export default function ShortenerPage() {
       })
 
       if (!res.ok) {
-        throw new Error("Failed to shorten URL")
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to shorten URL");
       }
 
       const data = await res.json()
       setShortUrl(`${origin}/${data.shortCode}`)
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Something went wrong while shortening the URL",
+        description: error.message || "Something went wrong while shortening the URL",
         variant: "destructive", 
       })
     } finally {
