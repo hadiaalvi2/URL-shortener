@@ -43,12 +43,10 @@ function writeStorage(storage: UrlStorage): void {
   }
 }
 
-
 function normalizeUrl(url: string): string {
   try {
     let urlToNormalize = url;
     
-   
     if (!urlToNormalize.startsWith('http://') && !urlToNormalize.startsWith('https://')) {
       urlToNormalize = 'https://' + urlToNormalize;
     }
@@ -67,8 +65,23 @@ function normalizeUrl(url: string): string {
     return normalized;
   } catch (error) {
     console.error('Error normalizing URL:', error);
-    
     return url.trim();
+  }
+}
+
+export async function getOriginalUrl(shortCode: string): Promise<string | null> {
+  try {
+    const storage = readStorage();
+    
+   
+    if (storage.codeToUrl && storage.codeToUrl[shortCode]) {
+      return storage.codeToUrl[shortCode].originalUrl;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error getting original URL:', error);
+    return null;
   }
 }
 
@@ -80,22 +93,20 @@ export function getUrl(shortCode: string): UrlData | undefined {
 export function createShortCode(url: string, metadata?: Partial<UrlData>): string {
   const storage = readStorage()
   
-
   if (!url || typeof url !== 'string') {
     throw new Error('Invalid URL provided');
   }
   
   const normalizedUrl = normalizeUrl(url);
   
-  
   const existingShortCode = storage.urlToCode ? storage.urlToCode[normalizedUrl] : undefined;
   
   if (existingShortCode) {
-    // Also verify that the short code actually exists in codeToUrl
+    
     if (storage.codeToUrl && storage.codeToUrl[existingShortCode]) {
       return existingShortCode;
     } else {
-      // Clean up orphaned entry
+      
       if (storage.urlToCode) {
         delete storage.urlToCode[normalizedUrl];
       }
@@ -114,20 +125,19 @@ export function createShortCode(url: string, metadata?: Partial<UrlData>): strin
     }
   } while (storage.codeToUrl && storage.codeToUrl[shortCode]);
 
-  // Initialize storage objects if they don't exist
   if (!storage.codeToUrl) storage.codeToUrl = {};
   if (!storage.urlToCode) storage.urlToCode = {};
 
   // Store the data
   storage.codeToUrl[shortCode] = {
-    originalUrl: url, // Store the original URL, not normalized
+    originalUrl: url, 
     title: metadata?.title,
     description: metadata?.description,
     image: metadata?.image,
     favicon: metadata?.favicon,
   };
   
-  storage.urlToCode[normalizedUrl] = shortCode; // Use normalized URL for lookup
+  storage.urlToCode[normalizedUrl] = shortCode; 
   
   writeStorage(storage);
   return shortCode;

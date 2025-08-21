@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createShortCode } from "@/lib/url-store"
+import { createShortCode, getOriginalUrl } from "@/lib/url-store" // Add getOriginalUrl import
 
 async function extractMetadata(url: string): Promise<{
   title?: string;
@@ -8,9 +8,52 @@ async function extractMetadata(url: string): Promise<{
   favicon?: string;
 }> {
   try {
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname;
+    
+    if (hostname.includes('url-shortener-nu-vert.vercel.app') || 
+        hostname.includes('localhost') || 
+        hostname.includes('zimo.ws')) {
+     
+      const shortCode = parsedUrl.pathname.replace('/', '');
+      if (shortCode) {
+        try {
+          
+          const originalUrl = await getOriginalUrl(shortCode);
+          if (originalUrl) {
+            console.log('Resolved short code', shortCode, 'to original URL:', originalUrl);
+           
+            return await extractMetadataFromTarget(originalUrl);
+          }
+        } catch (resolveError) {
+          console.error('Error resolving short code:', resolveError);
+        }
+      }
+      
+      return {
+        title: 'URL Shortener',
+        description: 'Shorten your long URLs with ease',
+        favicon: '/favicon.ico'
+      };
+    }
+
+   
+    return await extractMetadataFromTarget(url);
+    
+  } catch (error) {
+    console.error('Error extracting metadata:', error);
+    return {
+      title: 'Shared Link',
+      description: 'Check out this shared link'
+    };
+  }
+}
+
+
+async function extractMetadataFromTarget(url: string) {
+  try {
     const hostname = new URL(url).hostname;
     
-    // Hardcoded metadata for specific sites
     if (hostname.includes('netlify.com') || hostname.includes('netlify.app')) {
       return {
         title: 'Netlify - Deploy your websites with ease',
@@ -26,14 +69,6 @@ async function extractMetadata(url: string): Promise<{
         description: 'Pop Mart, the Chinese company which makes the toothy-grinned toys, is seeing massive growth in the collectibles market.',
         image: 'https://ichef.bbci.co.uk/news/1024/branded_news/13D5/production/_130499835_popmart.jpg',
         favicon: 'https://www.bbc.com/favicon.ico'
-      };
-    }
-    
-    if (hostname.includes('zimo.ws')) {
-      return {
-        title: 'ZIMO - URL Shortener Service',
-        description: 'Shorten your long URLs with ZIMO',
-        favicon: 'https://zimo.ws/favicon.ico'
       };
     }
 
@@ -79,7 +114,7 @@ async function extractMetadata(url: string): Promise<{
       
       let favicon = faviconMatch ? faviconMatch[1] : `${new URL(url).origin}/favicon.ico`;
       
-      
+      // Handle relative favicon URLs
       if (favicon && !favicon.startsWith('http')) {
         const baseUrl = new URL(url);
         favicon = new URL(favicon, baseUrl.origin).toString();
@@ -103,7 +138,7 @@ async function extractMetadata(url: string): Promise<{
     }
     
   } catch (error) {
-    console.error('Error extracting metadata:', error);
+    console.error('Error in extractMetadataFromTarget:', error);
     return {
       title: 'Shared Link',
       description: 'Check out this shared link'
