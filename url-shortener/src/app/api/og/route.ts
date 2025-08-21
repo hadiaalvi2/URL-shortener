@@ -26,6 +26,8 @@ export async function GET(req: Request) {
       favicon: favicon.startsWith('http') ? favicon : new URL(favicon, targetUrl).href
     });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch metadata' }, { status: 500 });
-  }
+  console.error('Error generating favicon:', error)
+  return new Response('Error generating favicon', { status: 500 })
+}
+
 }

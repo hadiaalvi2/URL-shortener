@@ -7,7 +7,6 @@ import { useToast } from "@/hooks/use-toast"
 
 function useRemoveExtensionAttributes() {
   useEffect(() => {
-
     const buttons = document.querySelectorAll('button[fdprocessedid]');
     buttons.forEach(button => {
       button.removeAttribute('fdprocessedid');
@@ -22,7 +21,7 @@ export default function ShortenerPage() {
   const [origin, setOrigin] = useState("")
   const { toast } = useToast()
 
-  useRemoveExtensionAttributes(); // Add this hook
+  useRemoveExtensionAttributes();
 
   useEffect(() => {
     setOrigin(window.location.origin)
@@ -68,10 +67,11 @@ export default function ShortenerPage() {
 
       const data = await res.json()
       setShortUrl(`${origin}/${data.shortCode}`)
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Something went wrong while shortening the URL";
       toast({
         title: "Error",
-        description: error.message || "Something went wrong while shortening the URL",
+        description: errorMessage,
         variant: "destructive", 
       })
     } finally {

@@ -16,14 +16,19 @@ interface UrlMap {
   [key: string]: UrlData;
 }
 
-let codeToUrl = new Map<string, UrlData>();
-let urlToCode = new Map<string, string>();
+// Initialize maps
+const codeToUrl = new Map<string, UrlData>();
+const urlToCode = new Map<string, string>();
 
 async function loadStore() {
   try {
     console.log('Attempting to load URL store from:', DB_FILE);
     const data = await fs.readFile(DB_FILE, 'utf-8');
     const parsedData: UrlMap = JSON.parse(data);
+
+    // Clear existing data
+    codeToUrl.clear();
+    urlToCode.clear();
 
     // Populate Maps
     for (const [code, urlData] of Object.entries(parsedData)) {
@@ -32,14 +37,14 @@ async function loadStore() {
     }
 
     console.log('URL store loaded successfully. Total entries:', codeToUrl.size);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       console.log('URL store file not found. Creating empty store.');
       await fs.mkdir(path.dirname(DB_FILE), { recursive: true });
       await fs.writeFile(DB_FILE, JSON.stringify({}, null, 2), 'utf-8');
       console.log('Empty URL store file created.');
     } else {
-      console.error('Error loading URL store:', error);
+      console.error('Error loading URL store:', error instanceof Error ? error.message : 'Unknown error');
     }
   }
 }
@@ -47,11 +52,17 @@ async function loadStore() {
 async function saveStore() {
   try {
     console.log('Attempting to save URL store to:', DB_FILE, '. Current entries:', codeToUrl.size);
-    const data: UrlMap = Object.fromEntries(codeToUrl);
+    
+    // Convert Map to plain object for JSON serialization
+    const data: UrlMap = {};
+    for (const [code, urlData] of codeToUrl.entries()) {
+      data[code] = urlData;
+    }
+    
     await fs.writeFile(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
     console.log('URL store saved successfully.');
-  } catch (error) {
-    console.error('Error saving URL store:', error);
+  } catch (error: unknown) {
+    console.error('Error saving URL store:', error instanceof Error ? error.message : 'Unknown error');
   }
 }
 
@@ -71,7 +82,14 @@ function makeCode(len = 6): string {
  */
 export async function saveUrl(longUrl: string, meta?: Partial<Omit<UrlData, 'originalUrl'>>): Promise<string> {
   console.log('saveUrl called for:', longUrl);
-  const normalized = new URL(longUrl).toString();
+  
+  // Normalize URL
+  let normalized: string;
+  try {
+    normalized = new URL(longUrl).toString();
+  } catch (error) {
+    throw new Error('Invalid URL provided');
+  }
 
   if (urlToCode.has(normalized)) {
     console.log('URL already exists, returning existing short code.');
@@ -81,10 +99,10 @@ export async function saveUrl(longUrl: string, meta?: Partial<Omit<UrlData, 'ori
   const code = makeCode(6);
   const urlData: UrlData = {
     originalUrl: normalized,
-    title: meta?.title || '',
-    description: meta?.description || '',
-    image: meta?.image || '',
-    favicon: meta?.favicon || ''
+    title: meta?.title,
+    description: meta?.description,
+    image: meta?.image,
+    favicon: meta?.favicon
   };
 
   codeToUrl.set(code, urlData);
