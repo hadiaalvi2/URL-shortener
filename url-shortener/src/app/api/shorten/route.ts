@@ -58,10 +58,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    
     let normalizedUrl: string;
     try {
-      
       let urlToParse = url;
       if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
         urlToParse = 'https://' + urlToParse;
@@ -69,7 +67,6 @@ export async function POST(request: NextRequest) {
       
       const parsed = new URL(urlToParse);
       normalizedUrl = parsed.toString();
-      
       
       if (normalizedUrl.endsWith('/')) {
         normalizedUrl = normalizedUrl.slice(0, -1);
@@ -81,11 +78,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
- 
     const metadata = await extractMetadata(normalizedUrl)
     
     
-    const shortCode = createShortCode(normalizedUrl, metadata)
+    const shortCode = await createShortCode(normalizedUrl, metadata)
     
     return NextResponse.json({ 
       shortCode,

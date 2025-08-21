@@ -43,19 +43,32 @@ function writeStorage(storage: UrlStorage): void {
   }
 }
 
+
 function normalizeUrl(url: string): string {
   try {
-    const urlObj = new URL(url)
+    let urlToNormalize = url;
     
-    let normalized = urlObj.toString()
    
-    if (normalized.endsWith('/')) {
-      normalized = normalized.slice(0, -1)
+    if (!urlToNormalize.startsWith('http://') && !urlToNormalize.startsWith('https://')) {
+      urlToNormalize = 'https://' + urlToNormalize;
     }
-    return normalized.toLowerCase()
-  } catch (error) {
     
-    return url.trim().toLowerCase()
+    const urlObj = new URL(urlToNormalize);
+    
+    let normalized = urlObj.toString();
+    
+    if (normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1);
+    }
+    
+    const hostname = urlObj.hostname.toLowerCase();
+    normalized = normalized.replace(urlObj.hostname, hostname);
+    
+    return normalized;
+  } catch (error) {
+    console.error('Error normalizing URL:', error);
+    
+    return url.trim();
   }
 }
 
@@ -67,50 +80,68 @@ export function getUrl(shortCode: string): UrlData | undefined {
 export function createShortCode(url: string, metadata?: Partial<UrlData>): string {
   const storage = readStorage()
   
-  const normalizedUrl = normalizeUrl(url)
-  
 
-  const existingShortCode = storage.urlToCode[normalizedUrl]
+  if (!url || typeof url !== 'string') {
+    throw new Error('Invalid URL provided');
+  }
+  
+  const normalizedUrl = normalizeUrl(url);
+  
+  
+  const existingShortCode = storage.urlToCode ? storage.urlToCode[normalizedUrl] : undefined;
+  
   if (existingShortCode) {
-    
-    if (storage.codeToUrl[existingShortCode]) {
-      return existingShortCode
+    // Also verify that the short code actually exists in codeToUrl
+    if (storage.codeToUrl && storage.codeToUrl[existingShortCode]) {
+      return existingShortCode;
     } else {
-      
-      delete storage.urlToCode[normalizedUrl]
+      // Clean up orphaned entry
+      if (storage.urlToCode) {
+        delete storage.urlToCode[normalizedUrl];
+      }
     }
   }
 
- 
-  let shortCode: string
-  let attempts = 0
+  let shortCode: string;
+  let attempts = 0;
+  
   do {
-    shortCode = Math.random().toString(36).substring(2, 10)
-    attempts++
+    shortCode = Math.random().toString(36).substring(2, 10);
+    attempts++;
     
     if (attempts > 10) {
-      throw new Error('Failed to generate unique short code')
+      throw new Error('Failed to generate unique short code');
     }
-  } while (storage.codeToUrl[shortCode])
+  } while (storage.codeToUrl && storage.codeToUrl[shortCode]);
+
+  // Initialize storage objects if they don't exist
+  if (!storage.codeToUrl) storage.codeToUrl = {};
+  if (!storage.urlToCode) storage.urlToCode = {};
 
   // Store the data
   storage.codeToUrl[shortCode] = {
-    originalUrl: url, 
+    originalUrl: url, // Store the original URL, not normalized
     title: metadata?.title,
     description: metadata?.description,
     image: metadata?.image,
     favicon: metadata?.favicon,
-  }
-  storage.urlToCode[normalizedUrl] = shortCode 
+  };
   
-  writeStorage(storage)
-  return shortCode
+  storage.urlToCode[normalizedUrl] = shortCode; // Use normalized URL for lookup
+  
+  writeStorage(storage);
+  return shortCode;
 }
 
 export function getAllUrls(): { shortCode: string; originalUrl: string }[] {
-  const storage = readStorage()
+  const storage = readStorage();
+  
+  if (!storage.codeToUrl) {
+    return [];
+  }
+  
   return Object.entries(storage.codeToUrl).map(([shortCode, data]) => ({
     shortCode,
     originalUrl: data.originalUrl,
-  }))
+  }));
 }

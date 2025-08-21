@@ -4,5 +4,16 @@
     "title": "Page from chat.deepseek.com",
     "description": "Check out this shared link",
     "favicon": "https://chat.deepseek.com/favicon.ico"
+  },
+  "codeToUrl": {
+    "tfkke1kb": {
+      "originalUrl": "https://vercel.com/new?teamSlug=hadiator19-3615s-projects",
+      "title": "Page from vercel.com",
+      "description": "Check out this shared link",
+      "favicon": "https://vercel.com/favicon.ico"
+    }
+  },
+  "urlToCode": {
+    "https://vercel.com/new?teamSlug=hadiator19-3615s-projects": "tfkke1kb"
   }
 }
