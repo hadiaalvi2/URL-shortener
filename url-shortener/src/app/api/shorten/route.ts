@@ -1,42 +1,7 @@
-import { NextResponse } from "next/server"
-import { saveUrl } from "@/lib/url-store"
+import { NextRequest, NextResponse } from "next/server"
+import { createShortCode } from "@/lib/url-store"
 
-export async function POST(req: Request) {
-  try {
-    const { url } = await req.json()
 
-    if (!url) {
-      return NextResponse.json({ error: "URL is required" }, { status: 400 })
-    }
-
-    let parsed: URL
-    try {
-      parsed = new URL(url)
-    } catch {
-      return NextResponse.json({ error: "Invalid URL" }, { status: 400 })
-    }
-
-    // Extract metadata from the URL
-    const metadata = await extractMetadata(url)
-    
-    // Save URL with metadata
-    const shortCode = await saveUrl(parsed.toString(), metadata)
-    
-    return NextResponse.json({ 
-      shortCode,
-      metadata: {
-        title: metadata.title,
-        description: metadata.description,
-        image: metadata.image,
-        favicon: metadata.favicon
-      }
-    })
-  } catch {
-    return NextResponse.json({ error: "Invalid request" }, { status: 500 })
-  }
-}
-
-// Function to extract metadata from a URL
 async function extractMetadata(url: string): Promise<{
   title?: string;
   description?: string;
@@ -44,12 +9,11 @@ async function extractMetadata(url: string): Promise<{
   favicon?: string;
 }> {
   try {
-    // For demo purposes, we'll simulate fetching metadata
-    // In a real implementation, you would fetch the page HTML and parse it
+   
     
     const hostname = new URL(url).hostname;
     
-    // Simulate different metadata based on the domain
+ 
     if (hostname.includes('netlify.com') || hostname.includes('netlify.app')) {
       return {
         title: 'Netlify - Deploy your websites with ease',
@@ -76,7 +40,7 @@ async function extractMetadata(url: string): Promise<{
       };
     }
     
-    // Default metadata for other sites
+    
     return {
       title: `Page from ${hostname}`,
       description: 'Check out this shared link',
@@ -85,5 +49,51 @@ async function extractMetadata(url: string): Promise<{
   } catch (error) {
     console.error('Error extracting metadata:', error);
     return {};
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const { url } = await request.json()
+
+    if (!url) {
+      return NextResponse.json(
+        { error: 'URL is required' },
+        { status: 400 }
+      )
+    }
+
+  
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid URL' },
+        { status: 400 }
+      )
+    }
+
+   
+    const metadata = await extractMetadata(url)
+    
+    
+    const shortCode = createShortCode(parsed.toString(), metadata)
+    
+    return NextResponse.json({ 
+      shortCode,
+      metadata: {
+        title: metadata.title,
+        description: metadata.description,
+        image: metadata.image,
+        favicon: metadata.favicon
+      }
+    })
+  } catch (error) {
+    console.error('Error shortening URL:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }

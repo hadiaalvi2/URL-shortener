@@ -1,124 +1,82 @@
-import { promises as fs } from 'fs';
-import path from 'path';
+import fs from 'fs'
+import path from 'path'
 
-const DB_FILE = path.resolve(process.cwd(), 'data', 'urls.json');
+const dataDir = path.join(process.cwd(), 'data')
+const dataFile = path.join(dataDir, 'urls.json')
 
-// Define URL data structure
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true })
+}
+
+if (!fs.existsSync(dataFile)) {
+  fs.writeFileSync(dataFile, JSON.stringify({ codeToUrl: {}, urlToCode: {} }))
+}
+
 interface UrlData {
-  originalUrl: string;
-  title?: string;
-  description?: string;
-  image?: string;
-  favicon?: string;
+  originalUrl: string
+  title?: string
+  description?: string
+  image?: string
+  favicon?: string
 }
 
-interface UrlMap {
-  [key: string]: UrlData;
+interface UrlStorage {
+  codeToUrl: Record<string, UrlData>
+  urlToCode: Record<string, string>
 }
 
-// Initialize maps
-const codeToUrl = new Map<string, UrlData>();
-const urlToCode = new Map<string, string>();
-
-async function loadStore() {
+function readStorage(): UrlStorage {
   try {
-    console.log('Attempting to load URL store from:', DB_FILE);
-    const data = await fs.readFile(DB_FILE, 'utf-8');
-    const parsedData: UrlMap = JSON.parse(data);
-
-    // Clear existing data
-    codeToUrl.clear();
-    urlToCode.clear();
-
-    // Populate Maps
-    for (const [code, urlData] of Object.entries(parsedData)) {
-      codeToUrl.set(code, urlData);
-      urlToCode.set(urlData.originalUrl, code);
-    }
-
-    console.log('URL store loaded successfully. Total entries:', codeToUrl.size);
-  } catch (error: unknown) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      console.log('URL store file not found. Creating empty store.');
-      await fs.mkdir(path.dirname(DB_FILE), { recursive: true });
-      await fs.writeFile(DB_FILE, JSON.stringify({}, null, 2), 'utf-8');
-      console.log('Empty URL store file created.');
-    } else {
-      console.error('Error loading URL store:', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-}
-
-async function saveStore() {
-  try {
-    console.log('Attempting to save URL store to:', DB_FILE, '. Current entries:', codeToUrl.size);
-    
-    // Convert Map to plain object for JSON serialization
-    const data: UrlMap = {};
-    for (const [code, urlData] of codeToUrl.entries()) {
-      data[code] = urlData;
-    }
-    
-    await fs.writeFile(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    console.log('URL store saved successfully.');
-  } catch (error: unknown) {
-    console.error('Error saving URL store:', error instanceof Error ? error.message : 'Unknown error');
-  }
-}
-
-// Load the store when the module is initialized
-loadStore();
-
-function makeCode(len = 6): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let out = "";
-  while (out.length < len) out += chars[Math.floor(Math.random() * chars.length)];
-  if (codeToUrl.has(out)) return makeCode(len);
-  return out;
-}
-
-/**
- * Save a new URL with metadata
- */
-export async function saveUrl(longUrl: string, meta?: Partial<Omit<UrlData, 'originalUrl'>>): Promise<string> {
-  console.log('saveUrl called for:', longUrl);
-  
-  // Normalize URL
-  let normalized: string;
-  try {
-    normalized = new URL(longUrl).toString();
+    const data = fs.readFileSync(dataFile, 'utf8')
+    return JSON.parse(data)
   } catch (error) {
-    throw new Error('Invalid URL provided');
+    console.error('Error reading URL storage:', error)
+    return { codeToUrl: {}, urlToCode: {} }
   }
-
-  if (urlToCode.has(normalized)) {
-    console.log('URL already exists, returning existing short code.');
-    return urlToCode.get(normalized)!;
-  }
-
-  const code = makeCode(6);
-  const urlData: UrlData = {
-    originalUrl: normalized,
-    title: meta?.title,
-    description: meta?.description,
-    image: meta?.image,
-    favicon: meta?.favicon
-  };
-
-  codeToUrl.set(code, urlData);
-  urlToCode.set(normalized, code);
-
-  console.log(`Generated new short code: ${code} for URL: ${normalized}`);
-  await saveStore();
-  return code;
 }
 
-/**
- * Get full URL data (not just the original URL)
- */
-export function getUrl(shortCode: string): UrlData | null {
-  console.log('getUrl called for shortCode:', shortCode);
-  const data = codeToUrl.get(shortCode) ?? null;
-  console.log(`Found data for shortCode ${shortCode}:`, data);
-  return data;
+function writeStorage(storage: UrlStorage): void {
+  try {
+    fs.writeFileSync(dataFile, JSON.stringify(storage, null, 2))
+  } catch (error) {
+    console.error('Error writing URL storage:', error)
+  }
+}
+
+export function getUrl(shortCode: string): UrlData | undefined {
+  const storage = readStorage()
+  return storage.codeToUrl[shortCode]
+}
+
+export function createShortCode(url: string, metadata?: Partial<UrlData>): string {
+  const storage = readStorage()
+  
+  // Check if URL already has a short code
+  if (storage.urlToCode[url]) {
+    return storage.urlToCode[url]
+  }
+
+  
+  const shortCode = Math.random().toString(36).substring(2, 10)
+  
+
+  storage.codeToUrl[shortCode] = {
+    originalUrl: url,
+    title: metadata?.title,
+    description: metadata?.description,
+    image: metadata?.image,
+    favicon: metadata?.favicon,
+  }
+  storage.urlToCode[url] = shortCode
+  
+  writeStorage(storage)
+  return shortCode
+}
+
+export function getAllUrls(): { shortCode: string; originalUrl: string }[] {
+  const storage = readStorage()
+  return Object.entries(storage.codeToUrl).map(([shortCode, data]) => ({
+    shortCode,
+    originalUrl: data.originalUrl,
+  }))
 }
