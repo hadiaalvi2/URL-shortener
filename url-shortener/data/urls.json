@@ -11,9 +11,17 @@
       "title": "Page from vercel.com",
       "description": "Check out this shared link",
       "favicon": "https://vercel.com/favicon.ico"
+    },
+    "eda2c9eg": {
+      "originalUrl": "https://www.youtube.com/watch?v=T82WX8B62DE",
+      "title": "Salla Sahib 9th Main Fail Ho Gye 😱 - YouTube",
+      "description": "Follow Me On Snapchat : https://www.snapchat.com/add/chzulqarnainFollow My WhatsApp Channel : https://whatsapp.com/channel/0029VaqG3r01dAvx077xuD2EZULQARNAIN...",
+      "image": "https://i.ytimg.com/vi/T82WX8B62DE/maxresdefault.jpg",
+      "favicon": "https://www.youtube.com/s/desktop/f048a476/img/logos/favicon_32x32.png"
     }
   },
   "urlToCode": {
-    "https://vercel.com/new?teamSlug=hadiator19-3615s-projects": "tfkke1kb"
+    "https://vercel.com/new?teamSlug=hadiator19-3615s-projects": "tfkke1kb",
+    "https://www.youtube.com/watch?v=T82WX8B62DE": "eda2c9eg"
   }
 }
