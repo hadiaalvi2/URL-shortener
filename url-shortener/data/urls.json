@@ -27,12 +27,27 @@
       "title": "Online FlowChart &amp; Diagrams Editor - Mermaid Live Editor",
       "description": "Check out this shared link",
       "favicon": "https://mermaid.live/./favicon.svg"
+    },
+    "7t5609g0": {
+      "originalUrl": "https://student.ntu.edu.pk/Degree/ProgramDetailView",
+      "title": "NTU Student – Log in",
+      "description": "Check out this shared link",
+      "favicon": "https://student.ntu.edu.pk/assets/img/favicon.ico"
+    },
+    "zvn40bx3": {
+      "originalUrl": "https://lovable.dev/projects/31e64e61-40f0-46ba-952b-df4b7a87591a",
+      "title": "Lovable - Build for the web 20x faster",
+      "description": "Lovable is your superhuman full stack engineer. Chat with AI to build web apps. Sync with GitHub. One-click deploy.",
+      "image": "https://lovable.dev/opengraph-image.png?e7ae4aa2faea9aea",
+      "favicon": "https://lovable.dev/favicon.ico"
     }
   },
   "urlToCode": {
     "https://vercel.com/new?teamSlug=hadiator19-3615s-projects": "tfkke1kb",
     "https://www.youtube.com/watch?v=T82WX8B62DE": "eda2c9eg",
     "https://mermaid.live/edit#pako:eNptU11vmzAU_StXlipRKaEJDYTwMKlrK23TKlVLsoeJFw8csAo2ss1SFvLfezHQpMt4gHPuPT4--ONAEpkyEpGrK9hqBvcUXw-cZoqWsJMKNrRgwmwU5UUsUPRMtWFgcq6BC8iNqXR0c1MyVVKeugX_w2Jhheg2TTq3tHfTQBUD9loxxUu0pEVn8NQPBKpB7kDIvWtj7Aq5T3KqTNfYS_VClaxFGsXi1Nk8xALwWZs6RT_HGcD1NUynn9o1z4SGbdVCh7bVB7FVfJeZhq-iBQRcXPY_K7nXTLfQg2_yt74U3VVVwZm2a4WKFrpCg-hS-pOzvbZ9nlDDpYAvXBupmha61kDiIcljWRWyYcpxRjT82HvssX4WfyxZ4bPURvehOvie6YPoMeWjqIP_F10k133k88qY-y4tuXAc-_k3sS2exbXcSp6ooBkuI26-QvOeWnKhxPOqqGE2dCcd-Gl7Tto-9w9WSWX0MP3AYkEmJFM8JZFRNZuQ4QjjVTh0NjExOStZTCKEKVUvMYnFEcdUVPySshyH4bnMchLtaKGR1VWKUYb7M0pobeS6EcnI0YFEB_JKIs-_dYNFsFqGs3kQ-n7oT0hDIj90g_kymAdLzwsXob84TshfO-fMDVa-d-st_Nkq8GZBsMQETOAK3OP9MDj0-AawCEd-": "brjm83kz",
-    "https://mermaid.live/edit#pako:eNptk11vmzAUhv_KkaVKVEpoYKF8XEzq2krbtErVkuxi4sYLDlgFG9nO0izkv-_YQJMu4wLec87j4xd_HMhaFoxk5OoKVprBPcXXA6elog1spIIlrZkwS0V5nQuEnqk2DEzFNXABlTGtzm5uGqYaygu_5r9ZLhyI3aZr263ou2mgigF7bZniDbaktW3w1A8EqkFuQMid72xsarlbV1QZW9hJ9UKV3Ioiy8WpsnzIBeCzMNsC-3neIK6vYTr92C14KTSs2g6sWrXvYEd8k6WGL6IDFFxc1j8pudNMd9CLr_KXvoTu2rbmTLu1QqIDm9ijukR_cLbTrs7X1HAp4DPXRqp9B7Y0BPng5LFpa7lnyvNGNfzYm-0xf2Z_TDnwWWqje1NWvnl6Bz0WfISs_D904Vz3ls8zo--7ouHC89znX8cueWbXxQ55ooKWuIy4-Qqb96ELLkg8r4oa5kxbdIhP23Nie9_fWSuV0cP0Q5QLMiHDscXjf7BDc2Iq1rCcZCgLql5ykosjcnRr5GIv1iQzassmBA9jWZFsQ2uN0bYtcP7h0oxIS8VPKc9Dkh3IK8nCKPLTeRAnQXAbxtE8SCZkT7LbyA-jNJyFSZQkSRDFxwn54xrM_DiNPsyidB7NkiBO03BCSmVdD2aYwBW4x_thSBYEx7-XKker": "0nbga86x"
+    "https://mermaid.live/edit#pako:eNptk11vmzAUhv_KkaVKVEpoYKF8XEzq2krbtErVkuxi4sYLDlgFG9nO0izkv-_YQJMu4wLec87j4xd_HMhaFoxk5OoKVprBPcXXA6elog1spIIlrZkwS0V5nQuEnqk2DEzFNXABlTGtzm5uGqYaygu_5r9ZLhyI3aZr263ou2mgigF7bZniDbaktW3w1A8EqkFuQMid72xsarlbV1QZW9hJ9UKV3Ioiy8WpsnzIBeCzMNsC-3neIK6vYTr92C14KTSs2g6sWrXvYEd8k6WGL6IDFFxc1j8pudNMd9CLr_KXvoTu2rbmTLu1QqIDm9ijukR_cLbTrs7X1HAp4DPXRqp9B7Y0BPng5LFpa7lnyvNGNfzYm-0xf2Z_TDnwWWqje1NWvnl6Bz0WfISs_D904Vz3ls8zo--7ouHC89znX8cueWbXxQ55ooKWuIy4-Qqb96ELLkg8r4oa5kxbdIhP23Nie9_fWSuV0cP0Q5QLMiHDscXjf7BDc2Iq1rCcZCgLql5ykosjcnRr5GIv1iQzassmBA9jWZFsQ2uN0bYtcP7h0oxIS8VPKc9Dkh3IK8nCKPLTeRAnQXAbxtE8SCZkT7LbyA-jNJyFSZQkSRDFxwn54xrM_DiNPsyidB7NkiBO03BCSmVdD2aYwBW4x_thSBYEx7-XKker": "0nbga86x",
+    "https://student.ntu.edu.pk/Degree/ProgramDetailView": "7t5609g0",
+    "https://lovable.dev/projects/31e64e61-40f0-46ba-952b-df4b7a87591a": "zvn40bx3"
   }
 }

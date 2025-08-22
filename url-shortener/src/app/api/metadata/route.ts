@@ -42,31 +42,19 @@ async function extractMetadataFromTarget(url: string) {
   try {
     const hostname = new URL(url).hostname;
     
-    if (hostname.includes('netlify.com') || hostname.includes('netlify.app')) {
-      return {
-        title: 'Netlify - Deploy your websites with ease',
-        description: 'Netlify is the modern way to deploy your websites with continuous deployment, serverless functions, and more.',
-        image: 'https://www.netlify.com/v3/img/build-dynamic-websites/netlify-cms.png',
-        favicon: 'https://www.netlify.com/v3/static/favicon/favicon-32x32.png'
-      };
-    }
-    
-    if (hostname.includes('bbc.com') || hostname.includes('bbc.co.uk')) {
-      return {
-        title: 'Labubu maker\'s profits soar by 40% as collectibles demand grows',
-        description: 'Pop Mart, the Chinese company which makes the toothy-grinned toys, is seeing massive growth in the collectibles market.',
-        image: 'https://ichef.bbci.co.uk/news/1024/branded_news/13D5/production/_130499835_popmart.jpg',
-        favicon: 'https://www.bbc.com/favicon.ico'
-      };
-    }
+    // Removed hardcoded responses for specific domains
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      // Increase timeout to 10 seconds
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       
       const response = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; LinkPreviewBot/1.0)'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,/;q=0.8',
+          'DNT': '1',
         },
         signal: controller.signal
       });
@@ -87,10 +75,14 @@ async function extractMetadataFromTarget(url: string) {
       const description = descMatch ? descMatch[1] : 'Check out this shared link';
       
       const imageMatch = html.match(/<meta property="og:image" content="(.*?)"/i) ||
-                        html.match(/<meta name="twitter:image" content="(.*?)"/i);
-      const image = imageMatch ? imageMatch[1] : undefined;
+                        html.match(/<meta name="twitter:image" content="(.*?)"/i) ||
+                        html.match(/<link[^>]*rel=['"]image_src['"][^>]*href=['"](.*?)['"]/i); // Add more image patterns
+      const image = imageMatch && imageMatch[1] ? imageMatch[1] : undefined;
 
-      const favicon = await extractFavicon(url, html);
+      const ogUrlMatch = html.match(/<meta property="og:url" content="(.*?)"/i);
+      const ogUrl = ogUrlMatch ? ogUrlMatch[1] : url; // Use original URL if og:url not found
+
+      const favicon = await extractFavicon(ogUrl, html); // Use ogUrl for favicon extraction
       
       return {
         title,

@@ -2,157 +2,125 @@ import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import { getUrl } from "@/lib/url-store"
 import type { Metadata } from "next"
-import Image from "next/image"
+// import Image from "next/image" // Image component is not directly used in the final render tree for bots
 
 interface Props {
-  params: Promise<{ shortCode: string }>
+  params: { shortCode: string }
 }
 
-const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://285a5fc88aac.ngrok-free.app"
+// Use Vercel deployment URL if available, otherwise fallback to localhost
+const baseUrl = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+
+interface FetchedMetadata {
+  title: string;
+  description: string;
+  image?: string;
+  favicon?: string;
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { shortCode } = await params
-  const data = getUrl(shortCode)
-  const metadataBase = new URL(baseUrl)
+  const { shortCode } = params;
+  const urlData = getUrl(shortCode);
+  const metadataBase = new URL(baseUrl);
 
-  if (!data) {
+  if (!urlData) {
     return {
       title: "Invalid or expired link",
       description: "This short link does not exist or has expired.",
       metadataBase,
-    }
+    };
   }
 
-  const title = data.title || "Shortened Link"
-  const description = data.description || "Open this link"
-  
+  let fetchedMetadata: FetchedMetadata | null = null;
+  try {
+    const metadataApiUrl = new URL("/api/metadata", baseUrl).toString();
+    const res = await fetch(metadataApiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: urlData.originalUrl }),
+      // Ensure this fetch request is not cached to always get fresh metadata
+      cache: "no-store", 
+    });
+
+    if (res.ok) {
+      fetchedMetadata = await res.json();
+    } else {
+      console.error("Failed to fetch metadata from API:", res.status, res.statusText);
+    }
+  } catch (error) {
+    console.error("Error calling metadata API:", error);
+  }
+
+  const title = fetchedMetadata?.title || urlData.title || "Shortened Link";
+  const description = fetchedMetadata?.description || urlData.description || "Open this link";
+  const imageUrl = fetchedMetadata?.image || urlData.image; // Use fetched image first
+  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon; // Use fetched favicon first
+
   // Ensure image URLs are absolute
-  const imageUrl = data.image 
-    ? data.image.startsWith('http') 
-      ? data.image 
-      : new URL(data.image, metadataBase).toString()
-    : new URL("/og-default.png", metadataBase).toString()
+  const absoluteImageUrl = imageUrl
+    ? imageUrl.startsWith("http")
+      ? imageUrl
+      : new URL(imageUrl, metadataBase).toString()
+    : new URL("/og-default.png", metadataBase).toString(); // Fallback to default OG image
+
+  const absoluteFaviconUrl = faviconUrl
+    ? faviconUrl.startsWith("http")
+      ? faviconUrl
+      : new URL(faviconUrl, metadataBase).toString()
+    : new URL("/favicon.ico", metadataBase).toString(); // Fallback to default favicon
 
   return {
     metadataBase,
     title,
     description,
+    icons: {
+      icon: absoluteFaviconUrl,
+      shortcut: absoluteFaviconUrl,
+      apple: absoluteFaviconUrl,
+    },
     openGraph: {
-      type: 'website',
+      type: "website",
       title,
       description,
       url: new URL(`/${shortCode}`, metadataBase).toString(),
-      images: [{
-        url: imageUrl,
-        width: 1200,
-        height: 630,
-        alt: title,
-      }],
+      images: [
+        {
+          url: absoluteImageUrl,
+          width: 1200,
+          height: 630,
+          alt: title,
+        },
+      ],
       siteName: "URL Shortener",
     },
     twitter: {
-      card: 'summary_large_image',
+      card: "summary_large_image",
       title,
       description,
-      images: [imageUrl],
+      images: [absoluteImageUrl],
     },
-  }
+  };
 }
 
 export default async function RedirectPage(props: Props) {
-  const { shortCode } = await props.params
-  const data = getUrl(shortCode)
+  const { shortCode } = props.params;
+  const urlData = getUrl(shortCode);
 
-  const headersList = await headers()
-  const userAgent = headersList.get("user-agent") || ""
-  const isSocialMediaBot =
-    userAgent.includes("facebookexternalhit") ||
-    userAgent.includes("Twitterbot") ||
-    userAgent.includes("LinkedInBot") ||
-    userAgent.includes("WhatsApp") ||
-    userAgent.includes("TelegramBot") ||
-    userAgent.includes("Discordbot") ||
-    userAgent.includes("Slackbot")
-
-  if (!data) {
-    return (
-      <main className="min-h-[60vh] flex items-center justify-center p-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
-          <p className="text-muted-foreground">
-            The short code &quot;{shortCode}&quot; was not found.
-          </p>
-        </div>
-      </main>
-    )
+  // Redirect logic remains the same for actual users
+  if (urlData) {
+    redirect(urlData.originalUrl);
   }
 
-  // For social media bots, show preview
-  if (isSocialMediaBot) {
-    const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
-    const title = data.title || `Page from ${domain}`
-    const description = data.description || "Check out this shared link"
-    const imageUrl = data.image || "/og-default.png"
-
-    return (
-      <html>
-        <head>
-          <title>{title}</title>
-          <meta property="og:title" content={title} />
-          <meta property="og:description" content={description} />
-          <meta property="og:image" content={imageUrl} />
-          <meta property="og:url" content={`${baseUrl}/${shortCode}`} />
-          <meta property="og:type" content="website" />
-          <meta property="og:site_name" content="URL Shortener" />
-          <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:title" content={title} />
-          <meta name="twitter:description" content={description} />
-          <meta name="twitter:image" content={imageUrl} />
-        </head>
-        <body>
-          <main className="min-h-screen bg-gray-50 p-6">
-            <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
-              {imageUrl && (
-                <div className="w-full h-48 bg-gray-200 overflow-hidden">
-                  <Image 
-                    src={imageUrl} 
-                    alt={title}
-                    width={800}
-                    height={400}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
-              
-              <div className="p-6 border-b border-gray-200">
-                <div className="flex items-center mb-4">
-                  <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3">
-                    <span className="text-gray-500 text-xs">🔗</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h1 className="text-xl font-bold text-gray-900 truncate">
-                      {title}
-                    </h1>
-                    <p className="text-sm text-gray-500 truncate">{domain}</p>
-                  </div>
-                </div>
-                <p className="text-gray-700">{description}</p>
-              </div>
-
-              <div className="p-6">
-                <a
-                  href={data.originalUrl}
-                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-md text-center block hover:bg-blue-700 transition-colors"
-                >
-                  Continue to Website
-                </a>
-              </div>
-            </div>
-          </main>
-        </body>
-      </html>
-    )
-  }
-
-  redirect(data.originalUrl)
+  return (
+    <main className="min-h-[60vh] flex items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
+        <p className="text-muted-foreground">
+          The short code “{shortCode}” was not found.
+        </p>
+      </div>
+    </main>
+  );
 }
