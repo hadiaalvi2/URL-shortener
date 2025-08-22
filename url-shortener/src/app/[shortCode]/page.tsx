@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation"
-// import { headers } from "next/headers"
 import { getUrl } from "@/lib/url-store"
 import type { Metadata } from "next"
-
 
 interface Props {
   params: Promise<{ shortCode: string }>
@@ -39,7 +37,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: urlData.originalUrl }),
-      
       cache: "no-store", 
     });
 
@@ -54,8 +51,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const title = fetchedMetadata?.title || urlData.title || "Shortened Link";
   const description = fetchedMetadata?.description || urlData.description || "Open this link";
-  const imageUrl = fetchedMetadata?.image || urlData.image; 
-  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon; 
+  const imageUrl = fetchedMetadata?.image || urlData.image;
+  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon;
 
   const absoluteImageUrl = imageUrl
     ? imageUrl.startsWith("http")
@@ -115,7 +112,7 @@ export default async function RedirectPage(props: Props) {
       <div className="max-w-md text-center">
         <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
         <p className="text-muted-foreground">
-          The short code “{shortCode}” was not found.
+          The short code "{shortCode}" was not found.
         </p>
       </div>
     </main>
