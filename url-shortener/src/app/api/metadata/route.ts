@@ -53,7 +53,7 @@ async function extractMetadataFromTarget(url: string) {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,/;q=0.8',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'DNT': '1',
         },
         signal: controller.signal
@@ -76,7 +76,7 @@ async function extractMetadataFromTarget(url: string) {
       
       const imageMatch = html.match(/<meta property="og:image" content="(.*?)"/i) ||
                         html.match(/<meta name="twitter:image" content="(.*?)"/i) ||
-                        html.match(/<link[^>]*rel=['"]image_src['"][^>]*href=['"](.*?)['"]/i); // Add more image patterns
+                        html.match(/<link[^>]*rel=['"]image_src['"][^>]*href=['"](.*?)"['"]/i); // Add more image patterns
       const image = imageMatch && imageMatch[1] ? imageMatch[1] : undefined;
 
       const ogUrlMatch = html.match(/<meta property="og:url" content="(.*?)"/i);

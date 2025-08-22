@@ -1,17 +1,16 @@
 import { redirect } from "next/navigation"
-import { headers } from "next/headers"
+// import { headers } from "next/headers"
 import { getUrl } from "@/lib/url-store"
 import type { Metadata } from "next"
-// import Image from "next/image" // Image component is not directly used in the final render tree for bots
+
 
 interface Props {
-  params: { shortCode: string }
+  params: Promise<{ shortCode: string }>
 }
 
-// Use Vercel deployment URL if available, otherwise fallback to localhost
 const baseUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
-  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3001";
 
 interface FetchedMetadata {
   title: string;
@@ -21,8 +20,8 @@ interface FetchedMetadata {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { shortCode } = params;
-  const urlData = getUrl(shortCode);
+  const { shortCode } = await params;
+  const urlData = await getUrl(shortCode);
   const metadataBase = new URL(baseUrl);
 
   if (!urlData) {
@@ -40,7 +39,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: urlData.originalUrl }),
-      // Ensure this fetch request is not cached to always get fresh metadata
+      
       cache: "no-store", 
     });
 
@@ -55,21 +54,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const title = fetchedMetadata?.title || urlData.title || "Shortened Link";
   const description = fetchedMetadata?.description || urlData.description || "Open this link";
-  const imageUrl = fetchedMetadata?.image || urlData.image; // Use fetched image first
-  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon; // Use fetched favicon first
+  const imageUrl = fetchedMetadata?.image || urlData.image; 
+  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon; 
 
-  // Ensure image URLs are absolute
   const absoluteImageUrl = imageUrl
     ? imageUrl.startsWith("http")
       ? imageUrl
       : new URL(imageUrl, metadataBase).toString()
-    : new URL("/og-default.png", metadataBase).toString(); // Fallback to default OG image
+    : new URL("/og-default.png", metadataBase).toString(); 
 
   const absoluteFaviconUrl = faviconUrl
     ? faviconUrl.startsWith("http")
       ? faviconUrl
       : new URL(faviconUrl, metadataBase).toString()
-    : new URL("/favicon.ico", metadataBase).toString(); // Fallback to default favicon
+    : new URL("/favicon.ico", metadataBase).toString(); 
 
   return {
     metadataBase,
@@ -105,10 +103,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function RedirectPage(props: Props) {
-  const { shortCode } = props.params;
-  const urlData = getUrl(shortCode);
+  const { shortCode } = await props.params;
+  const urlData = await getUrl(shortCode);
 
-  // Redirect logic remains the same for actual users
   if (urlData) {
     redirect(urlData.originalUrl);
   }

@@ -9,7 +9,6 @@ interface UrlData {
 }
 
 
-
 function normalizeUrl(url: string): string {
   try {
     let urlToNormalize = url;
@@ -66,7 +65,8 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
 
   const normalizedUrl = normalizeUrl(url);
 
-  const allKeys = await kv.keys("*"); // Get all short codes
+
+  const allKeys = await kv.keys("*"); 
   for (const key of allKeys) {
     const storedUrlData = await kv.hgetall<UrlData>(key);
     if (storedUrlData && normalizeUrl(storedUrlData.originalUrl) === normalizedUrl) {
@@ -84,7 +84,6 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   } while (await kv.exists(shortCode)); 
 
-  
   await kv.hset(shortCode, {
     originalUrl: url,
     title: metadata?.title,
