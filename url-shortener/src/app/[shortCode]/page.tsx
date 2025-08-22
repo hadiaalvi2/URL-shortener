@@ -1,14 +1,16 @@
 import { redirect } from "next/navigation"
+// import { headers } from "next/headers"
 import { getUrl } from "@/lib/url-store"
 import type { Metadata } from "next"
 
+
 interface Props {
-  params: Promise<{ shortCode: string }>
+  params: { shortCode: string }
 }
 
 const baseUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3001";
+  ? https://${process.env.VERCEL_URL}
+  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
 interface FetchedMetadata {
   title: string;
@@ -18,7 +20,7 @@ interface FetchedMetadata {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { shortCode } = await params;
+  const { shortCode } = params;
   const urlData = await getUrl(shortCode);
   const metadataBase = new URL(baseUrl);
 
@@ -51,9 +53,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const title = fetchedMetadata?.title || urlData.title || "Shortened Link";
   const description = fetchedMetadata?.description || urlData.description || "Open this link";
-  const imageUrl = fetchedMetadata?.image || urlData.image;
-  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon;
+  const imageUrl = fetchedMetadata?.image || urlData.image; // Use fetched image first
+  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon; // Use fetched favicon first
 
+  // Ensure image URLs are absolute
   const absoluteImageUrl = imageUrl
     ? imageUrl.startsWith("http")
       ? imageUrl
@@ -79,7 +82,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       type: "website",
       title,
       description,
-      url: new URL(`/${shortCode}`, metadataBase).toString(),
+      url: new URL(/${shortCode}, metadataBase).toString(),
       images: [
         {
           url: absoluteImageUrl,
@@ -100,8 +103,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function RedirectPage(props: Props) {
-  const { shortCode } = await props.params;
+  const { shortCode } = props.params;
   const urlData = await getUrl(shortCode);
+
 
   if (urlData) {
     redirect(urlData.originalUrl);
@@ -112,7 +116,7 @@ export default async function RedirectPage(props: Props) {
       <div className="max-w-md text-center">
         <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
         <p className="text-muted-foreground">
-          The short code "{shortCode}" was not found.
+          The short code “{shortCode}” was not found.
         </p>
       </div>
     </main>
