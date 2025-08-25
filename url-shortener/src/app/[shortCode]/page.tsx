@@ -110,7 +110,7 @@ export default async function RedirectPage({ params }: { params: Promise<{ short
       <div className="max-w-md text-center">
         <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
         <p className="text-muted-foreground">
-          The short code "{shortCode}" was not found.
+          The short code {'"'}{shortCode}{'"'} was not found.
         </p>
       </div>
     </main>
