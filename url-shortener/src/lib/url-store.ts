@@ -5,12 +5,12 @@ console.log('Environment check:', {
   vercelEnv: process.env.VERCEL ? 'Vercel' : 'Local'
 });
 
-
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
   throw new Error('Missing Supabase environment variables. Please set SUPABASE_URL and SUPABASE_ANON_KEY in your Vercel environment variables.');
 }
 
 import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_ANON_KEY!;
@@ -47,53 +47,6 @@ function normalizeUrl(url: string): string {
   } catch (error) {
     console.error('Error normalizing URL:', error);
     return url.trim();
-  }
-}
-
-export async function getOriginalUrl(shortCode: string): Promise<string | null> {
-  try {
-    const { data, error } = await supabase
-      .from('urls')
-      .select('original_url')
-      .eq('short_code', shortCode)
-      .single();
-
-    if (error) {
-      console.error('Supabase error:', error);
-      return null;
-    }
-
-    return data?.original_url || null;
-  } catch (error) {
-    console.error('Error getting URL:', error);
-    return null;
-  }
-}
-
-export async function getUrl(shortCode: string): Promise<UrlData | undefined> {
-  try {
-    const { data, error } = await supabase
-      .from('urls')
-      .select('*')
-      .eq('short_code', shortCode)
-      .single();
-
-    if (error || !data) {
-      console.error('Supabase error:', error);
-      return undefined;
-    }
-
-    return {
-      originalUrl: data.original_url,
-      title: data.title,
-      description: data.description,
-      image: data.image,
-      favicon: data.favicon,
-      createdAt: new Date(data.created_at).getTime()
-    };
-  } catch (error) {
-    console.error('Error getting URL data:', error);
-    return undefined;
   }
 }
 
@@ -154,7 +107,55 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     throw new Error('Failed to create short URL');
   }
 
+  // HARDCODE THE CORRECT DOMAIN TEMPORARILY
   return shortCode;
+}
+
+export async function getUrl(shortCode: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('urls')
+      .select('original_url')
+      .eq('short_code', shortCode)
+      .single();
+
+    if (error) {
+      console.error('Supabase error:', error);
+      return null;
+    }
+
+    return data?.original_url || null;
+  } catch (error) {
+    console.error('Error getting URL:', error);
+    return null;
+  }
+}
+
+export async function getUrlData(shortCode: string): Promise<UrlData | undefined> {
+  try {
+    const { data, error } = await supabase
+      .from('urls')
+      .select('*')
+      .eq('short_code', shortCode)
+      .single();
+
+    if (error || !data) {
+      console.error('Supabase error:', error);
+      return undefined;
+    }
+
+    return {
+      originalUrl: data.original_url,
+      title: data.title,
+      description: data.description,
+      image: data.image,
+      favicon: data.favicon,
+      createdAt: new Date(data.created_at).getTime()
+    };
+  } catch (error) {
+    console.error('Error getting URL data:', error);
+    return undefined;
+  }
 }
 
 export async function getAllUrls(): Promise<{ shortCode: string; originalUrl: string }[]> {
@@ -175,7 +176,31 @@ export async function getAllUrls(): Promise<{ shortCode: string; originalUrl: st
     }));
   } catch (error) {
     console.error('Error getting all URLs:', error);
-    return [
-    ];
+    return [];
+  }
+}
+
+// In your API route that returns the short URL, make sure it uses the correct domain
+export async function POST(request: NextRequest) {
+  try {
+    const { url, metadata } = await request.json();
+    
+    if (!url) {
+      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+    }
+
+    const normalizedUrl = normalizeUrl(url);
+    const shortCode = await createShortCode(normalizedUrl, metadata);
+    
+    return NextResponse.json({ 
+      shortCode,
+      shortUrl: `https://url-shortener-rouge-eta.vercel.app/${shortCode}` // HARDCODED
+    });
+  } catch (error) {
+    console.error('Error creating short URL:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

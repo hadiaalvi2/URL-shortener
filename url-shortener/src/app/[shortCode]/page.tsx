@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
-import { getUrl } from "@/lib/url-store";
+import { getUrl, getUrlData } from "@/lib/url-store"; // Import getUrlData
 import type { Metadata } from "next";
-
-// Remove the Props interface and use PageProps directly
 
 const baseUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -16,8 +14,8 @@ interface FetchedMetadata {
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ shortCode: string }> }): Promise<Metadata> {
-  const { shortCode } = await params; // Await the params
-  const urlData = await getUrl(shortCode);
+  const { shortCode } = await params;
+  const urlData = await getUrlData(shortCode); // Use getUrlData instead of getUrl
   const metadataBase = new URL(baseUrl);
 
   if (!urlData) {
@@ -98,11 +96,11 @@ export async function generateMetadata({ params }: { params: Promise<{ shortCode
 }
 
 export default async function RedirectPage({ params }: { params: Promise<{ shortCode: string }> }) {
-  const { shortCode } = await params; // Await the params
-  const urlData = await getUrl(shortCode);
+  const { shortCode } = await params;
+  const originalUrl = await getUrl(shortCode); // Use getUrl for redirect
 
-  if (urlData) {
-    redirect(urlData.originalUrl);
+  if (originalUrl) {
+    redirect(originalUrl);
   }
 
   return (
