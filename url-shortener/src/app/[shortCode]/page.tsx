@@ -1,11 +1,9 @@
-import { redirect } from "next/navigation"
-// import { headers } from "next/headers"
-import { getUrl } from "@/lib/url-store"
-import type { Metadata } from "next"
-
+import { redirect } from "next/navigation";
+import { getUrl } from "@/lib/url-store";
+import type { Metadata } from "next";
 
 interface Props {
-  params: { shortCode: string }
+  params: { shortCode: string };
 }
 
 const baseUrl = process.env.VERCEL_URL
@@ -39,7 +37,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: urlData.originalUrl }),
-      cache: "no-store", 
+      cache: "no-store",
     });
 
     if (res.ok) {
@@ -53,21 +51,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const title = fetchedMetadata?.title || urlData.title || "Shortened Link";
   const description = fetchedMetadata?.description || urlData.description || "Open this link";
-  const imageUrl = fetchedMetadata?.image || urlData.image; // Use fetched image first
-  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon; // Use fetched favicon first
+  const imageUrl = fetchedMetadata?.image || urlData.image;
+  const faviconUrl = fetchedMetadata?.favicon || urlData.favicon;
 
- 
   const absoluteImageUrl = imageUrl
     ? imageUrl.startsWith("http")
       ? imageUrl
       : new URL(imageUrl, metadataBase).toString()
-    : new URL("/og-default.png", metadataBase).toString(); 
+    : new URL("/og-default.png", metadataBase).toString();
 
   const absoluteFaviconUrl = faviconUrl
     ? faviconUrl.startsWith("http")
       ? faviconUrl
       : new URL(faviconUrl, metadataBase).toString()
-    : new URL("/favicon.ico", metadataBase).toString(); 
+    : new URL("/favicon.ico", metadataBase).toString();
 
   return {
     metadataBase,
@@ -82,7 +79,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       type: "website",
       title,
       description,
-      url: new URL(/${shortCode}, metadataBase).toString(),
+      url: new URL(`/${shortCode}`, metadataBase).toString(), // FIXED HERE
       images: [
         {
           url: absoluteImageUrl,
@@ -105,7 +102,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function RedirectPage(props: Props) {
   const { shortCode } = props.params;
   const urlData = await getUrl(shortCode);
-
 
   if (urlData) {
     redirect(urlData.originalUrl);
