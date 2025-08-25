@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
-import { getUrl, getUrlData } from "@/lib/url-store"; // Import getUrlData
+import { getUrl, getUrlData } from "@/lib/url-store"; 
 import type { Metadata } from "next";
 
-const baseUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3001");
 
 interface FetchedMetadata {
   title: string;

@@ -107,7 +107,6 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     throw new Error('Failed to create short URL');
   }
 
-  // HARDCODE THE CORRECT DOMAIN TEMPORARILY
   return shortCode;
 }
 
@@ -180,7 +179,6 @@ export async function getAllUrls(): Promise<{ shortCode: string; originalUrl: st
   }
 }
 
-// In your API route that returns the short URL, make sure it uses the correct domain
 export async function POST(request: NextRequest) {
   try {
     const { url, metadata } = await request.json();
@@ -194,7 +192,7 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({ 
       shortCode,
-      shortUrl: `https://url-shortener-rouge-eta.vercel.app/${shortCode}` // HARDCODED
+     shortUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/${shortCode}`
     });
   } catch (error) {
     console.error('Error creating short URL:', error);
