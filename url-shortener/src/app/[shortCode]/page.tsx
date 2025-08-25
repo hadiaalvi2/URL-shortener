@@ -116,3 +116,4 @@ export default async function RedirectPage({ params }: { params: { shortCode: st
   }
 
   redirect(data.original_url); 
+}
