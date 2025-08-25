@@ -2,7 +2,6 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_ANON_KEY!
-<<<<<<< HEAD
 
 console.log('Supabase Config:', {
   hasUrl: !!supabaseUrl,
@@ -21,6 +20,3 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     autoRefreshToken: false
   }
 })
-=======
-export const supabase = createClient(supabaseUrl, supabaseKey)
->>>>>>> parent of 34cf6f2 (codes update)
