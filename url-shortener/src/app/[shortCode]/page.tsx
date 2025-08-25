@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
-import { getUrl, getUrlData } from "@/lib/url-store"; 
+import { getUrl, getUrlData } from "@/lib/url-store";
 import type { Metadata } from "next";
 
-const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+const baseUrl =
+  process.env.NEXT_PUBLIC_BASE_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3001");
 
 interface FetchedMetadata {
@@ -12,9 +13,9 @@ interface FetchedMetadata {
   favicon?: string;
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ shortCode: string }> }): Promise<Metadata> {
-  const { shortCode } = await params;
-  const urlData = await getUrlData(shortCode); // Use getUrlData instead of getUrl
+export async function generateMetadata({ params }: { params: { shortCode: string } }): Promise<Metadata> {
+  const { shortCode } = params; 
+  const urlData = await getUrlData(shortCode);
   const metadataBase = new URL(baseUrl);
 
   if (!urlData) {
@@ -38,7 +39,7 @@ export async function generateMetadata({ params }: { params: Promise<{ shortCode
     if (res.ok) {
       fetchedMetadata = await res.json();
     } else {
-      console.error("Failed to fetch metadata from API:", res.status, res.statusText);
+      console.error("Failed to fetch metadata:", res.status, res.statusText);
     }
   } catch (error) {
     console.error("Error calling metadata API:", error);
@@ -49,17 +50,13 @@ export async function generateMetadata({ params }: { params: Promise<{ shortCode
   const imageUrl = fetchedMetadata?.image || urlData.image;
   const faviconUrl = fetchedMetadata?.favicon || urlData.favicon;
 
-  const absoluteImageUrl = imageUrl
-    ? imageUrl.startsWith("http")
-      ? imageUrl
-      : new URL(imageUrl, metadataBase).toString()
-    : new URL("/og-default.png", metadataBase).toString();
+  const absoluteImageUrl = imageUrl?.startsWith("http")
+    ? imageUrl
+    : new URL(imageUrl || "/og-default.png", metadataBase).toString();
 
-  const absoluteFaviconUrl = faviconUrl
-    ? faviconUrl.startsWith("http")
-      ? faviconUrl
-      : new URL(faviconUrl, metadataBase).toString()
-    : new URL("/favicon.ico", metadataBase).toString();
+  const absoluteFaviconUrl = faviconUrl?.startsWith("http")
+    ? faviconUrl
+    : new URL(faviconUrl || "/favicon.ico", metadataBase).toString();
 
   return {
     metadataBase,
@@ -75,14 +72,7 @@ export async function generateMetadata({ params }: { params: Promise<{ shortCode
       title,
       description,
       url: new URL(`/${shortCode}`, metadataBase).toString(),
-      images: [
-        {
-          url: absoluteImageUrl,
-          width: 1200,
-          height: 630,
-          alt: title,
-        },
-      ],
+      images: [{ url: absoluteImageUrl, width: 1200, height: 630, alt: title }],
       siteName: "URL Shortener",
     },
     twitter: {
@@ -94,9 +84,9 @@ export async function generateMetadata({ params }: { params: Promise<{ shortCode
   };
 }
 
-export default async function RedirectPage({ params }: { params: Promise<{ shortCode: string }> }) {
-  const { shortCode } = await params;
-  const originalUrl = await getUrl(shortCode); // Use getUrl for redirect
+export default async function RedirectPage({ params }: { params: { shortCode: string } }) {
+  const { shortCode } = params;
+  const originalUrl = await getUrl(shortCode);
 
   if (originalUrl) {
     redirect(originalUrl);
@@ -107,7 +97,7 @@ export default async function RedirectPage({ params }: { params: Promise<{ short
       <div className="max-w-md text-center">
         <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
         <p className="text-muted-foreground">
-          The short code {'"'}{shortCode}{'"'} was not found.
+          The short code "{shortCode}" was not found.
         </p>
       </div>
     </main>
