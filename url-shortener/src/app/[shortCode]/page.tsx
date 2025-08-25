@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getUrl, getUrlData } from "@/lib/url-store";
 import type { Metadata } from "next";
-
+//base
 const baseUrl =
   process.env.NEXT_PUBLIC_BASE_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3001");
