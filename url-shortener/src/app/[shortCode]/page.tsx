@@ -2,14 +2,11 @@ import { redirect } from "next/navigation";
 import { getUrl } from "@/lib/url-store";
 import type { Metadata } from "next";
 
-interface Props {
-  params: { shortCode: string };
-}
+// Remove the Props interface and use PageProps directly
 
 const baseUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
-  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3001";
-
+  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
 interface FetchedMetadata {
   title: string;
@@ -18,8 +15,8 @@ interface FetchedMetadata {
   favicon?: string;
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { shortCode } = params;
+export async function generateMetadata({ params }: { params: Promise<{ shortCode: string }> }): Promise<Metadata> {
+  const { shortCode } = await params; // Await the params
   const urlData = await getUrl(shortCode);
   const metadataBase = new URL(baseUrl);
 
@@ -80,7 +77,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       type: "website",
       title,
       description,
-      url: new URL(`/${shortCode}`, metadataBase).toString(), // FIXED HERE
+      url: new URL(`/${shortCode}`, metadataBase).toString(),
       images: [
         {
           url: absoluteImageUrl,
@@ -100,8 +97,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function RedirectPage(props: Props) {
-  const { shortCode } = props.params;
+export default async function RedirectPage({ params }: { params: Promise<{ shortCode: string }> }) {
+  const { shortCode } = await params; // Await the params
   const urlData = await getUrl(shortCode);
 
   if (urlData) {
@@ -113,7 +110,7 @@ export default async function RedirectPage(props: Props) {
       <div className="max-w-md text-center">
         <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
         <p className="text-muted-foreground">
-          The short code “{shortCode}” was not found.
+          The short code "{shortCode}" was not found.
         </p>
       </div>
     </main>
