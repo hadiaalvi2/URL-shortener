@@ -1,4 +1,20 @@
-import { supabase } from './supabase'
+console.log('Environment check:', {
+  hasSupabaseUrl: !!process.env.SUPABASE_URL,
+  hasSupabaseKey: !!process.env.SUPABASE_ANON_KEY,
+  supabaseUrl: process.env.SUPABASE_URL ? 'Set' : 'Not set',
+  vercelEnv: process.env.VERCEL ? 'Vercel' : 'Local'
+});
+
+
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+  throw new Error('Missing Supabase environment variables. Please set SUPABASE_URL and SUPABASE_ANON_KEY in your Vercel environment variables.');
+}
+
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.SUPABASE_URL!;
+const supabaseKey = process.env.SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export interface UrlData {
   originalUrl: string;
@@ -88,7 +104,6 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
 
   const normalizedUrl = normalizeUrl(url);
 
-  // Check if URL already exists
   const { data: existingUrl } = await supabase
     .from('urls')
     .select('short_code')
@@ -99,7 +114,6 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     return existingUrl.short_code;
   }
 
-  // Generate unique short code
   let shortCode: string;
   let attempts = 0;
   let isUnique = false;
@@ -112,7 +126,7 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
       throw new Error('Failed to generate unique short code');
     }
 
-    
+    // Check if short code exists
     const { data: existing } = await supabase
       .from('urls')
       .select('short_code')
@@ -122,6 +136,7 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     isUnique = !existing;
   } while (!isUnique);
 
+  // Insert into database
   const { error } = await supabase
     .from('urls')
     .insert({
