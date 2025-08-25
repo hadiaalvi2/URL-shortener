@@ -1,21 +1,4 @@
-interface StoredUrlData {
-  originalUrl: string;
-  title?: string;
-  description?: string;
-  image?: string;
-  favicon?: string;
-  createdAt: number;
-}
-
-const globalUrlStore = global as typeof globalThis & {
-  urlStore?: Map<string, StoredUrlData>;
-};
-
-if (!globalUrlStore.urlStore) {
-  globalUrlStore.urlStore = new Map<string, StoredUrlData>();
-}
-
-const urlStore = globalUrlStore.urlStore;
+import { supabase } from './supabase'
 
 export interface UrlData {
   originalUrl: string;
@@ -52,83 +35,131 @@ function normalizeUrl(url: string): string {
 }
 
 export async function getOriginalUrl(shortCode: string): Promise<string | null> {
-  const data = urlStore.get(shortCode);
-  return data?.originalUrl || null;
+  try {
+    const { data, error } = await supabase
+      .from('urls')
+      .select('original_url')
+      .eq('short_code', shortCode)
+      .single();
+
+    if (error) {
+      console.error('Supabase error:', error);
+      return null;
+    }
+
+    return data?.original_url || null;
+  } catch (error) {
+    console.error('Error getting URL:', error);
+    return null;
+  }
 }
 
 export async function getUrl(shortCode: string): Promise<UrlData | undefined> {
-  const data = urlStore.get(shortCode);
-  if (!data) return undefined;
-  
-  return {
-    originalUrl: data.originalUrl,
-    title: data.title,
-    description: data.description,
-    image: data.image,
-    favicon: data.favicon,
-    createdAt: data.createdAt
-  };
+  try {
+    const { data, error } = await supabase
+      .from('urls')
+      .select('*')
+      .eq('short_code', shortCode)
+      .single();
+
+    if (error || !data) {
+      console.error('Supabase error:', error);
+      return undefined;
+    }
+
+    return {
+      originalUrl: data.original_url,
+      title: data.title,
+      description: data.description,
+      image: data.image,
+      favicon: data.favicon,
+      createdAt: new Date(data.created_at).getTime()
+    };
+  } catch (error) {
+    console.error('Error getting URL data:', error);
+    return undefined;
+  }
 }
 
-export async function createShortCode(url: string, metadata?: Partial<Omit<StoredUrlData, 'createdAt'>>): Promise<string> {
+export async function createShortCode(url: string, metadata?: Partial<UrlData>): Promise<string> {
   if (!url || typeof url !== 'string') {
     throw new Error('Invalid URL provided');
   }
 
   const normalizedUrl = normalizeUrl(url);
 
- 
-  for (const [existingShortCode, existingData] of urlStore.entries()) {
-    if (normalizeUrl(existingData.originalUrl) === normalizedUrl) {
-      return existingShortCode;
-    }
+  // Check if URL already exists
+  const { data: existingUrl } = await supabase
+    .from('urls')
+    .select('short_code')
+    .eq('original_url', normalizedUrl)
+    .single();
+
+  if (existingUrl) {
+    return existingUrl.short_code;
   }
 
-
+  // Generate unique short code
   let shortCode: string;
   let attempts = 0;
-  
+  let isUnique = false;
+
   do {
     shortCode = Math.random().toString(36).substring(2, 10);
     attempts++;
+    
     if (attempts > 10) {
       throw new Error('Failed to generate unique short code');
     }
-  } while (urlStore.has(shortCode));
 
-  // Store the URL data
-  const urlData: StoredUrlData = {
-    originalUrl: url,
-    title: metadata?.title,
-    description: metadata?.description,
-    image: metadata?.image,
-    favicon: metadata?.favicon,
-    createdAt: Date.now()
-  };
+    
+    const { data: existing } = await supabase
+      .from('urls')
+      .select('short_code')
+      .eq('short_code', shortCode)
+      .single();
 
-  urlStore.set(shortCode, urlData);
-  console.log(`Created short code: ${shortCode} for URL: ${url}`);
-  console.log(`Current store size: ${urlStore.size}`);
+    isUnique = !existing;
+  } while (!isUnique);
+
+  const { error } = await supabase
+    .from('urls')
+    .insert({
+      short_code: shortCode,
+      original_url: url,
+      title: metadata?.title,
+      description: metadata?.description,
+      image: metadata?.image,
+      favicon: metadata?.favicon,
+      created_at: new Date().toISOString()
+    });
+
+  if (error) {
+    console.error('Supabase insert error:', error);
+    throw new Error('Failed to create short URL');
+  }
 
   return shortCode;
 }
 
 export async function getAllUrls(): Promise<{ shortCode: string; originalUrl: string }[]> {
-  const result: { shortCode: string; originalUrl: string }[] = [];
-  
-  for (const [shortCode, data] of urlStore.entries()) {
-    result.push({
-      shortCode,
-      originalUrl: data.originalUrl
-    });
-  }
-  
-  return result;
-}
+  try {
+    const { data, error } = await supabase
+      .from('urls')
+      .select('short_code, original_url')
+      .order('created_at', { ascending: false });
 
-export function getStoreStats() {
-  return {
-    size: urlStore.size,
-    keys: Array.from(urlStore.keys())
-  };
+    if (error) {
+      console.error('Supabase error:', error);
+      return [];
+    }
+
+    return data.map(item => ({
+      shortCode: item.short_code,
+      originalUrl: item.original_url
+    }));
+  } catch (error) {
+    console.error('Error getting all URLs:', error);
+    return [];
+  }
 }
