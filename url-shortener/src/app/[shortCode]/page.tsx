@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
-import { getUrl, getUrlData } from "@/lib/url-store";
+import { supabase } from "@/lib/supabase";
 import type { Metadata } from "next";
-//base
+
+// base
 const baseUrl =
   process.env.NEXT_PUBLIC_BASE_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3001");
@@ -14,11 +15,18 @@ interface FetchedMetadata {
 }
 
 export async function generateMetadata({ params }: { params: { shortCode: string } }): Promise<Metadata> {
-  const { shortCode } = params; 
-  const urlData = await getUrlData(shortCode);
+  const { shortCode } = params;
+  
+  // Fetch URL data from Supabase
+  const { data: urlData, error } = await supabase
+    .from('urls')
+    .select('*')
+    .eq('short_code', shortCode)
+    .single();
+
   const metadataBase = new URL(baseUrl);
 
-  if (!urlData) {
+  if (error || !urlData) {
     return {
       title: "Invalid or expired link",
       description: "This short link does not exist or has expired.",
@@ -32,7 +40,7 @@ export async function generateMetadata({ params }: { params: { shortCode: string
     const res = await fetch(metadataApiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: urlData.originalUrl }),
+      body: JSON.stringify({ url: urlData.original_url }),
       cache: "no-store",
     });
 
@@ -86,20 +94,27 @@ export async function generateMetadata({ params }: { params: { shortCode: string
 
 export default async function RedirectPage({ params }: { params: { shortCode: string } }) {
   const { shortCode } = params;
-  const originalUrl = await getUrl(shortCode);
 
-  if (originalUrl) {
-    redirect(originalUrl);
+  // Fetch the original URL from Supabase
+  const { data, error } = await supabase
+    .from('urls')
+    .select('original_url')
+    .eq('short_code', shortCode)
+    .single();
+
+  if (error || !data) {
+    // If not found, show error message
+    return (
+      <main className="min-h-[60vh] flex items-center justify-center p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
+          <p className="text-muted-foreground">
+            The short code "{shortCode}" was not found.
+          </p>
+        </div>
+      </main>
+    );
   }
 
-  return (
-    <main className="min-h-[60vh] flex items-center justify-center p-6">
-      <div className="max-w-md text-center">
-        <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
-        <p className="text-muted-foreground">
-          The short code "{shortCode}" was not found.
-        </p>
-      </div>
-    </main>
-  );
+  redirect(data.original_url); // Server-side redirect
 }
