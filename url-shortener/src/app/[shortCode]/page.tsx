@@ -9,8 +9,8 @@ interface Props {
 }
 
 const baseUrl = process.env.VERCEL_URL
-  ? https://${process.env.VERCEL_URL}
-  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  ? `https://${process.env.VERCEL_URL}`
+  : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3001";
 
 interface FetchedMetadata {
   title: string;
@@ -56,7 +56,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const imageUrl = fetchedMetadata?.image || urlData.image; // Use fetched image first
   const faviconUrl = fetchedMetadata?.favicon || urlData.favicon; // Use fetched favicon first
 
-  // Ensure image URLs are absolute
+ 
   const absoluteImageUrl = imageUrl
     ? imageUrl.startsWith("http")
       ? imageUrl
