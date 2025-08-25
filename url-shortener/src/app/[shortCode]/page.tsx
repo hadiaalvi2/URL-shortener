@@ -95,7 +95,6 @@ export async function generateMetadata({ params }: { params: { shortCode: string
 export default async function RedirectPage({ params }: { params: { shortCode: string } }) {
   const { shortCode } = params;
 
-  // Fetch the original URL from Supabase
   const { data, error } = await supabase
     .from('urls')
     .select('original_url')
@@ -103,18 +102,17 @@ export default async function RedirectPage({ params }: { params: { shortCode: st
     .single();
 
   if (error || !data) {
-    // If not found, show error message
+  
     return (
       <main className="min-h-[60vh] flex items-center justify-center p-6">
         <div className="max-w-md text-center">
           <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
           <p className="text-muted-foreground">
-            The short code "{shortCode}" was not found.
+            The short code &ldquo;{shortCode}&rdquo; was not found.
           </p>
         </div>
       </main>
     );
   }
 
-  redirect(data.original_url); // Server-side redirect
-}
+  redirect(data.original_url); 
