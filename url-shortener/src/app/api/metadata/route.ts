@@ -42,8 +42,6 @@ async function extractMetadataFromTarget(url: string) {
   try {
     const hostname = new URL(url).hostname;
     
-    // Removed hardcoded responses for specific domains
-
     try {
       const controller = new AbortController();
       // Increase timeout to 10 seconds
@@ -76,13 +74,13 @@ async function extractMetadataFromTarget(url: string) {
       
       const imageMatch = html.match(/<meta property="og:image" content="(.*?)"/i) ||
                         html.match(/<meta name="twitter:image" content="(.*?)"/i) ||
-                        html.match(/<link[^>]*rel=['"]image_src['"][^>]*href=['"](.*?)"['"]/i); // Add more image patterns
+                        html.match(/<link[^>]*rel=['"]image_src['"][^>]*href=['"](.*?)"['"]/i);
       const image = imageMatch && imageMatch[1] ? imageMatch[1] : undefined;
 
       const ogUrlMatch = html.match(/<meta property="og:url" content="(.*?)"/i);
-      const ogUrl = ogUrlMatch ? ogUrlMatch[1] : url; // Use original URL if og:url not found
+      const ogUrl = ogUrlMatch ? ogUrlMatch[1] : url;
 
-      const favicon = await extractFavicon(ogUrl, html); // Use ogUrl for favicon extraction
+      const favicon = await extractFavicon(ogUrl, html);
       
       return {
         title,
@@ -112,6 +110,20 @@ async function extractMetadataFromTarget(url: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    
+    const origin = request.headers.get('origin');
+    const isInternalRequest = origin === process.env.NEXT_PUBLIC_BASE_URL || 
+                             origin === 'http://localhost:3000' ||
+                             origin === 'http://localhost:3001';
+    
+    if (!isInternalRequest) {
+      const authHeader = request.headers.get('authorization');
+      if (!authHeader || authHeader !== `Bearer ${process.env.API_SECRET}`) {
+        console.warn('External metadata request without authentication');
+    
+      }
+    }
+
     const { url } = await request.json()
 
     if (!url) {
