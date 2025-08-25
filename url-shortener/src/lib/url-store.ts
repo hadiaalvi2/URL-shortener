@@ -175,6 +175,7 @@ export async function getAllUrls(): Promise<{ shortCode: string; originalUrl: st
     }));
   } catch (error) {
     console.error('Error getting all URLs:', error);
-    return [];
+    return [
+    ];
   }
 }
