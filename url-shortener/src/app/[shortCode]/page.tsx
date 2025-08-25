@@ -14,37 +14,22 @@ export async function generateMetadata({ params }: { params: { shortCode: string
       .eq('short_code', shortCode)
       .single();
 
-    const metadataBase = new URL(baseUrl);
-
     if (error || !urlData) {
       return {
         title: "Invalid or expired link",
         description: "This short link does not exist or has expired.",
-        metadataBase,
       };
     }
 
     return {
-      metadataBase,
       title: urlData.title || "Shortened Link",
       description: urlData.description || "Open this link",
-      openGraph: {
-        title: urlData.title || "Shortened Link",
-        description: urlData.description || "Open this link",
-        url: new URL(`/${shortCode}`, baseUrl).toString(),
-        siteName: "URL Shortener",
-      },
-      twitter: {
-        card: "summary",
-        title: urlData.title || "Shortened Link",
-        description: urlData.description || "Open this link",
-      },
     };
   } catch (error) {
-    console.error("Metadata error:", error);
+    console.error("Metadata generation error:", error);
     return {
-      title: "URL Shortener",
-      description: "Shortened URL service",
+      title: "Error",
+      description: "An error occurred",
     };
   }
 }
@@ -53,7 +38,7 @@ export default async function RedirectPage({ params }: { params: { shortCode: st
   const { shortCode } = params;
 
   try {
-    console.log('Attempting to redirect for short code:', shortCode);
+    console.log('Looking up short code:', shortCode);
     
     const { data, error } = await supabase
       .from('urls')
@@ -61,27 +46,18 @@ export default async function RedirectPage({ params }: { params: { shortCode: st
       .eq('short_code', shortCode)
       .single();
 
-    if (error) {
-      console.error('Supabase error:', error);
-      return (
-        <main className="min-h-[60vh] flex items-center justify-center p-6">
-          <div className="max-w-md text-center">
-            <h1 className="text-2xl font-semibold mb-2">Database Error</h1>
-            <p className="text-muted-foreground">
-              Error: {error.message}
-            </p>
-          </div>
-        </main>
-      );
-    }
+    console.log('Supabase response:', { data, error: error?.message });
 
-    if (!data) {
+    if (error || !data) {
       return (
         <main className="min-h-[60vh] flex items-center justify-center p-6">
           <div className="max-w-md text-center">
-            <h1 className="text-2xl font-semibold mb-2">Link Not Found</h1>
+            <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
             <p className="text-muted-foreground">
-              The short code "{shortCode}" does not exist.
+              The short code &ldquo;{shortCode}&rdquo; was not found.
+            </p>
+            <p className="text-sm text-muted-foreground mt-4">
+              Error: {error?.message || 'No data returned'}
             </p>
           </div>
         </main>
@@ -92,13 +68,13 @@ export default async function RedirectPage({ params }: { params: { shortCode: st
     redirect(data.original_url);
 
   } catch (error: any) {
-    console.error("Unexpected error:", error);
+    console.error("Redirect error:", error);
     return (
       <main className="min-h-[60vh] flex items-center justify-center p-6">
         <div className="max-w-md text-center">
           <h1 className="text-2xl font-semibold mb-2">Server Error</h1>
           <p className="text-muted-foreground">
-            {error.message}
+            An error occurred: {error.message}
           </p>
         </div>
       </main>
