@@ -7,7 +7,15 @@ interface StoredUrlData {
   createdAt: number;
 }
 
-const urlStore = new Map<string, StoredUrlData>();
+const globalUrlStore = global as typeof globalThis & {
+  urlStore?: Map<string, StoredUrlData>;
+};
+
+if (!globalUrlStore.urlStore) {
+  globalUrlStore.urlStore = new Map<string, StoredUrlData>();
+}
+
+const urlStore = globalUrlStore.urlStore;
 
 export interface UrlData {
   originalUrl: string;
@@ -69,11 +77,13 @@ export async function createShortCode(url: string, metadata?: Partial<Omit<Store
 
   const normalizedUrl = normalizeUrl(url);
 
+ 
   for (const [existingShortCode, existingData] of urlStore.entries()) {
     if (normalizeUrl(existingData.originalUrl) === normalizedUrl) {
       return existingShortCode;
     }
   }
+
 
   let shortCode: string;
   let attempts = 0;
@@ -86,6 +96,7 @@ export async function createShortCode(url: string, metadata?: Partial<Omit<Store
     }
   } while (urlStore.has(shortCode));
 
+  // Store the URL data
   const urlData: StoredUrlData = {
     originalUrl: url,
     title: metadata?.title,
@@ -97,6 +108,7 @@ export async function createShortCode(url: string, metadata?: Partial<Omit<Store
 
   urlStore.set(shortCode, urlData);
   console.log(`Created short code: ${shortCode} for URL: ${url}`);
+  console.log(`Current store size: ${urlStore.size}`);
 
   return shortCode;
 }
