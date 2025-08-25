@@ -6,8 +6,8 @@ interface UrlData {
   description?: string;
   image?: string;
   favicon?: string;
+  [key: string]: unknown;
 }
-
 
 function normalizeUrl(url: string): string {
   try {
@@ -37,7 +37,7 @@ function normalizeUrl(url: string): string {
 
 export async function getOriginalUrl(shortCode: string): Promise<string | null> {
   try {
-    const urlData = await kv.hgetall<UrlData>(shortCode);
+    const urlData = await kv.hgetall(shortCode) as UrlData | null;
     if (urlData) {
       return urlData.originalUrl;
     }
@@ -50,7 +50,7 @@ export async function getOriginalUrl(shortCode: string): Promise<string | null> 
 
 export async function getUrl(shortCode: string): Promise<UrlData | undefined> {
   try {
-    const urlData = await kv.hgetall<UrlData>(shortCode);
+    const urlData = await kv.hgetall(shortCode) as UrlData | null;
     return urlData || undefined;
   } catch (error) {
     console.error('Error getting URL data from KV:', error);
@@ -65,10 +65,9 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
 
   const normalizedUrl = normalizeUrl(url);
 
-
   const allKeys = await kv.keys("*"); 
   for (const key of allKeys) {
-    const storedUrlData = await kv.hgetall<UrlData>(key);
+    const storedUrlData = await kv.hgetall(key) as UrlData | null;
     if (storedUrlData && normalizeUrl(storedUrlData.originalUrl) === normalizedUrl) {
       return key; 
     }
@@ -84,13 +83,15 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   } while (await kv.exists(shortCode)); 
 
-  await kv.hset(shortCode, {
+  const urlData: UrlData = {
     originalUrl: url,
     title: metadata?.title,
     description: metadata?.description,
     image: metadata?.image,
     favicon: metadata?.favicon,
-  });
+  };
+
+  await kv.hset(shortCode, urlData);
 
   return shortCode;
 }
@@ -101,7 +102,7 @@ export async function getAllUrls(): Promise<{ shortCode: string; originalUrl: st
     const urls: { shortCode: string; originalUrl: string }[] = [];
 
     for (const key of allKeys) {
-      const urlData = await kv.hgetall<UrlData>(key);
+      const urlData = await kv.hgetall(key) as UrlData | null;
       if (urlData) {
         urls.push({
           shortCode: key,
