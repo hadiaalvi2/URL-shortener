@@ -1,17 +1,21 @@
 import { createClient } from '@supabase/supabase-js'
 
+// Debug logging
+console.log('Supabase Environment Check:', {
+  hasSupabaseUrl: !!process.env.SUPABASE_URL,
+  hasSupabaseKey: !!process.env.SUPABASE_ANON_KEY,
+  nodeEnv: process.env.NODE_ENV
+})
+
 const supabaseUrl = process.env.SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_ANON_KEY!
 
-console.log('Supabase Config:', {
-  hasUrl: !!supabaseUrl,
-  hasKey: !!supabaseKey,
-  urlLength: supabaseUrl?.length,
-  keyLength: supabaseKey?.length
-})
-
 if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing Supabase environment variables. Please check your Vercel environment variables.')
+  throw new Error(
+    'Missing Supabase environment variables. ' +
+    'SUPABASE_URL: ' + (supabaseUrl ? 'set' : 'missing') + ', ' +
+    'SUPABASE_ANON_KEY: ' + (supabaseKey ? 'set' : 'missing')
+  )
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
