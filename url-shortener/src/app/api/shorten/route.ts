@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-    // Fetch metadata from the dedicated metadata API
+    
     const metaResponse = await fetch(`${request.nextUrl.origin}/api/metadata`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,24 +1,32 @@
-import { kv } from "@vercel/kv";
-
-interface UrlData {
+interface StoredUrlData {
   originalUrl: string;
   title?: string;
   description?: string;
   image?: string;
   favicon?: string;
+  createdAt: number;
+}
+
+const urlStore = new Map<string, StoredUrlData>();
+
+export interface UrlData {
+  originalUrl: string;
+  title?: string;
+  description?: string;
+  image?: string;
+  favicon?: string;
+  createdAt: number;
   [key: string]: unknown;
 }
 
 function normalizeUrl(url: string): string {
   try {
     let urlToNormalize = url;
-    
     if (!urlToNormalize.startsWith('http://') && !urlToNormalize.startsWith('https://')) {
       urlToNormalize = 'https://' + urlToNormalize;
     }
     
     const urlObj = new URL(urlToNormalize);
-    
     let normalized = urlObj.toString();
     
     if (normalized.endsWith('/')) {
@@ -36,83 +44,79 @@ function normalizeUrl(url: string): string {
 }
 
 export async function getOriginalUrl(shortCode: string): Promise<string | null> {
-  try {
-    const urlData = await kv.hgetall(shortCode) as UrlData | null;
-    if (urlData) {
-      return urlData.originalUrl;
-    }
-    return null;
-  } catch (error) {
-    console.error('Error getting original URL from KV:', error);
-    return null;
-  }
+  const data = urlStore.get(shortCode);
+  return data?.originalUrl || null;
 }
 
 export async function getUrl(shortCode: string): Promise<UrlData | undefined> {
-  try {
-    const urlData = await kv.hgetall(shortCode) as UrlData | null;
-    return urlData || undefined;
-  } catch (error) {
-    console.error('Error getting URL data from KV:', error);
-    return undefined;
-  }
+  const data = urlStore.get(shortCode);
+  if (!data) return undefined;
+  
+  return {
+    originalUrl: data.originalUrl,
+    title: data.title,
+    description: data.description,
+    image: data.image,
+    favicon: data.favicon,
+    createdAt: data.createdAt
+  };
 }
 
-export async function createShortCode(url: string, metadata?: Partial<UrlData>): Promise<string> {
+export async function createShortCode(url: string, metadata?: Partial<Omit<StoredUrlData, 'createdAt'>>): Promise<string> {
   if (!url || typeof url !== 'string') {
     throw new Error('Invalid URL provided');
   }
 
   const normalizedUrl = normalizeUrl(url);
 
-  const allKeys = await kv.keys("*"); 
-  for (const key of allKeys) {
-    const storedUrlData = await kv.hgetall(key) as UrlData | null;
-    if (storedUrlData && normalizeUrl(storedUrlData.originalUrl) === normalizedUrl) {
-      return key; 
+  for (const [existingShortCode, existingData] of urlStore.entries()) {
+    if (normalizeUrl(existingData.originalUrl) === normalizedUrl) {
+      return existingShortCode;
     }
   }
 
   let shortCode: string;
   let attempts = 0;
+  
   do {
     shortCode = Math.random().toString(36).substring(2, 10);
     attempts++;
     if (attempts > 10) {
       throw new Error('Failed to generate unique short code');
     }
-  } while (await kv.exists(shortCode)); 
+  } while (urlStore.has(shortCode));
 
-  const urlData: UrlData = {
+  const urlData: StoredUrlData = {
     originalUrl: url,
     title: metadata?.title,
     description: metadata?.description,
     image: metadata?.image,
     favicon: metadata?.favicon,
+    createdAt: Date.now()
   };
 
-  await kv.hset(shortCode, urlData);
+  urlStore.set(shortCode, urlData);
+  console.log(`Created short code: ${shortCode} for URL: ${url}`);
 
   return shortCode;
 }
 
 export async function getAllUrls(): Promise<{ shortCode: string; originalUrl: string }[]> {
-  try {
-    const allKeys = await kv.keys("*");
-    const urls: { shortCode: string; originalUrl: string }[] = [];
-
-    for (const key of allKeys) {
-      const urlData = await kv.hgetall(key) as UrlData | null;
-      if (urlData) {
-        urls.push({
-          shortCode: key,
-          originalUrl: urlData.originalUrl,
-        });
-      }
-    }
-    return urls;
-  } catch (error) {
-    console.error('Error getting all URLs from KV:', error);
-    return [];
+  const result: { shortCode: string; originalUrl: string }[] = [];
+  
+  for (const [shortCode, data] of urlStore.entries()) {
+    result.push({
+      shortCode,
+      originalUrl: data.originalUrl
+    });
   }
+  
+  return result;
+}
+
+export function getStoreStats() {
+  return {
+    size: urlStore.size,
+    keys: Array.from(urlStore.keys())
+  };
 }
