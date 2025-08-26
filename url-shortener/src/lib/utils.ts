@@ -30,7 +30,7 @@ export async function fetchPageMetadata(url: string) {
         favicon = undefined
       }
     }
-
+    console.log(`Favicon for ${url}: ${favicon}`)
     return {
       title: title || undefined,
       description: description || undefined,
