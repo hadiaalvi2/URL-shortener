@@ -30,8 +30,8 @@ async function extractMetadata(url: string): Promise<{
     let image = ogData.image; 
 
     if (image && !image.startsWith('http')) {
-      const imageUrlBase = new URL(url);
-      image = new URL(image, imageUrlBase.origin).toString();
+      const baseUrl = new URL(url);
+      image = new URL(image, baseUrl.origin).toString();
     }
 
     const title = ogData.title || `Page from ${domain}`;
