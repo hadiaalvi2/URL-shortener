@@ -69,16 +69,16 @@ export async function GET(req: Request) {
       }
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching metadata:', error);
     
-    if (error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       return NextResponse.json({ error: 'Request timeout' }, { status: 408 });
     }
     
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Error fetching metadata',
-      details: error.message 
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
 }
@@ -98,7 +98,7 @@ async function extractFavicon($: cheerio.CheerioAPI, baseUrl: URL): Promise<stri
     'link[rel="shortcut icon"]',
     'link[rel="mask-icon"]',
     'link[type="image/x-icon"]',
-    'link[rel="fluid-icon"]'
+    'link[rel="fluid-icon"]',
   ];
 
   // Collect all possible favicon candidates
@@ -142,7 +142,7 @@ async function extractFavicon($: cheerio.CheerioAPI, baseUrl: URL): Promise<stri
       if (faviconRes.ok && faviconRes.headers.get('content-type')?.includes('image')) {
         return candidate.href;
       }
-    } catch (error) {
+    } catch (_error) {
       // Continue to next candidate if this one fails
       console.log(`Favicon candidate failed: ${candidate.href}`);
     }
@@ -161,7 +161,7 @@ async function extractFavicon($: cheerio.CheerioAPI, baseUrl: URL): Promise<stri
     if (defaultRes.ok && defaultRes.headers.get('content-type')?.includes('image')) {
       return defaultFavicon;
     }
-  } catch (error) {
+  } catch (_error) {
     console.log(`Default favicon failed: ${defaultFavicon}`);
   }
 
