@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       )?.[0];
       
       if (existingShortCode) {
-        const existingData = getUrl(existingShortCode);
+        const existingData = await getUrl(existingShortCode);
         return NextResponse.json({ 
           shortCode: existingShortCode,
           metadata: existingData
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     const metadata = await extractMetadata(normalizedUrl);
     
     // Create short code
-    const shortCode = createShortCode(normalizedUrl, metadata);
+    const shortCode = await createShortCode(normalizedUrl, metadata);
     
     return NextResponse.json({ 
       shortCode,

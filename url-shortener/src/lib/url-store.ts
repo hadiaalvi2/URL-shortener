@@ -1,5 +1,3 @@
-import fs from 'fs'
-import path from 'path'
 import { kv } from "@vercel/kv"
 
 export interface UrlData {
@@ -22,38 +20,6 @@ export async function getUrlFromKV(shortCode: string): Promise<UrlData | null> {
 
 export async function saveUrlToKV(shortCode: string, data: UrlData) {
   await kv.set(`url:${shortCode}`, data)
-}
-
-// File-based storage functions
-const dataDir = path.join(process.cwd(), 'data')
-const dataFile = path.join(dataDir, 'urls.json')
-
-// Initialize storage file
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true })
-}
-
-if (!fs.existsSync(dataFile)) {
-  fs.writeFileSync(dataFile, JSON.stringify({ codeToUrl: {}, urlToCode: {} }))
-}
-
-function readStorage(): UrlStorage {
-  try {
-    const data = fs.readFileSync(dataFile, 'utf8')
-    return JSON.parse(data)
-  } catch (error) {
-    console.error('Error reading URL storage:', error)
-    return { codeToUrl: {}, urlToCode: {} }
-  }
-}
-
-function writeStorage(storage: UrlStorage): void {
-  try {
-    fs.writeFileSync(dataFile, JSON.stringify(storage, null, 2))
-  } catch (error) {
-    console.error('Error writing URL storage:', error)
-    throw new Error('Failed to write URL storage')
-  }
 }
 
 function normalizeUrl(url: string): string {
@@ -84,41 +50,36 @@ function normalizeUrl(url: string): string {
 
 export async function getOriginalUrl(shortCode: string): Promise<string | null> {
   try {
-    const storage = readStorage();
-    
-    if (storage.codeToUrl && storage.codeToUrl[shortCode]) {
-      return storage.codeToUrl[shortCode].originalUrl;
-    }
-    
-    return null;
+    const urlData = await getUrlFromKV(shortCode);
+    return urlData ? urlData.originalUrl : null;
   } catch (error) {
     console.error('Error getting original URL:', error);
     return null;
   }
 }
 
-export function getUrl(shortCode: string): UrlData | undefined {
-  const storage = readStorage()
-  return storage.codeToUrl[shortCode]
+export async function getUrl(shortCode: string): Promise<UrlData | undefined> {
+  return await getUrlFromKV(shortCode);
 }
 
-export function createShortCode(url: string, metadata?: Partial<UrlData>): string {
+export async function createShortCode(url: string, metadata?: Partial<UrlData>): Promise<string> {
   if (!url || typeof url !== 'string') {
     throw new Error('Invalid URL provided');
   }
-  
-  const storage = readStorage()
+
   const normalizedUrl = normalizeUrl(url);
-  
-  // Check if URL already exists
-  if (storage.urlToCode && storage.urlToCode[normalizedUrl]) {
-    const existingShortCode = storage.urlToCode[normalizedUrl];
-    // Verify the short code still exists in codeToUrl
-    if (storage.codeToUrl && storage.codeToUrl[existingShortCode]) {
+
+  // Check if URL already exists in KV
+  const allUrls = await getAllUrls(); // Temporarily use getAllUrls, will refactor this later
+  const existingShortCode = Object.entries(allUrls).find(
+    ([_, storedUrl]) => storedUrl === normalizedUrl
+  )?.[0];
+
+  if (existingShortCode) {
+    // Verify the short code still exists in KV
+    const existingData = await getUrlFromKV(existingShortCode);
+    if (existingData) {
       return existingShortCode;
-    } else {
-      // Clean up orphaned entry
-      delete storage.urlToCode[normalizedUrl];
     }
   }
 
@@ -126,43 +87,44 @@ export function createShortCode(url: string, metadata?: Partial<UrlData>): strin
   let shortCode: string;
   let attempts = 0;
   const maxAttempts = 10;
-  
+
   do {
     shortCode = Math.random().toString(36).substring(2, 10);
     attempts++;
-    
+
     if (attempts > maxAttempts) {
       throw new Error('Failed to generate unique short code');
     }
-  } while (storage.codeToUrl && storage.codeToUrl[shortCode]);
+  } while (await getUrlFromKV(shortCode)); // Check uniqueness against KV
 
-  // Initialize storage objects if they don't exist
-  if (!storage.codeToUrl) storage.codeToUrl = {};
-  if (!storage.urlToCode) storage.urlToCode = {};
-
-  // Store the data - use original URL for codeToUrl but normalized for urlToCode
-  storage.codeToUrl[shortCode] = {
-    originalUrl: url, // Store the original URL as provided
+  // Store the data in KV
+  const urlData: UrlData = {
+    originalUrl: url,
     title: metadata?.title,
     description: metadata?.description,
     image: metadata?.image,
     favicon: metadata?.favicon,
   };
-  storage.urlToCode[normalizedUrl] = shortCode;
-  
-  writeStorage(storage);
+
+  await saveUrlToKV(shortCode, urlData);
+  await kv.set(`url_to_code:${normalizedUrl}`, shortCode); // Store reverse mapping for efficient lookup
+
   return shortCode;
 }
 
-export function getAllUrls(): Record<string, string> {
-  const storage = readStorage();
-  const result: Record<string, string> = {};
-  
-  if (storage.codeToUrl) {
-    Object.entries(storage.codeToUrl).forEach(([shortCode, data]) => {
-      result[shortCode] = data.originalUrl;
-    });
+export async function getAllUrls(): Promise<Record<string, string>> {
+  // This implementation needs to be updated to iterate through KV keys
+  // or maintain a separate list of short codes.
+  // For now, it will return an empty object to prevent runtime errors.
+  console.warn("getAllUrls is not fully implemented for Vercel KV and may not return all URLs.");
+  const keys = await kv.keys('url:*'); // Get all keys that start with 'url:'
+  const urls: Record<string, string> = {};
+  for (const key of keys) {
+    const shortCode = key.split(':')[1];
+    const urlData = await getUrlFromKV(shortCode);
+    if (urlData) {
+      urls[shortCode] = urlData.originalUrl;
+    }
   }
-  
-  return result;
+  return urls;
 }
