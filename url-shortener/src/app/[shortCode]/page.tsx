@@ -103,6 +103,9 @@ export default async function RedirectPage(props: Props) {
       const description = data.description || "Check out this shared link"
       const imageUrl = data.image || "/og-default.png"
 
+      console.log(`[RedirectPage - Bot] Image URL: ${imageUrl}`)
+      console.log(`[RedirectPage - Bot] Favicon URL: ${data.favicon}`)
+
       return (
         <html>
           <head>
