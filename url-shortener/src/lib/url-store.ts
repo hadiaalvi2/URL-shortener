@@ -99,22 +99,16 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   } while (await getUrlFromKV(shortCode)); // Check uniqueness against KV
 
   // Store the data in KV
+  const scrapedMetadata = await fetchPageMetadata(url)
+
   const urlData: UrlData = {
     originalUrl: url,
-    title: metadata?.title,
-    description: metadata?.description,
-    image: metadata?.image,
-    favicon: metadata?.favicon,
+    title: metadata?.title || scrapedMetadata.title,
+    description: metadata?.description || scrapedMetadata.description,
+    image: metadata?.image || scrapedMetadata.image,
+    favicon: metadata?.favicon || scrapedMetadata.favicon,
   }
   
-  if (!metadata) {
-    const scrapedMetadata = await fetchPageMetadata(url)
-    urlData.title = scrapedMetadata.title || urlData.title
-    urlData.description = scrapedMetadata.description || urlData.description
-    urlData.image = scrapedMetadata.image || urlData.image
-    urlData.favicon = scrapedMetadata.favicon || urlData.favicon
-  }
-
   await saveUrlToKV(shortCode, urlData);
   await kv.set(`url_to_code:${normalizedUrl}`, shortCode); // Store reverse mapping for efficient lookup
 
