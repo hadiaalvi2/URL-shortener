@@ -10,6 +10,10 @@ async function extractMetadata(url: string): Promise<{
   favicon?: string;
 }> {
   try {
+ 
+    const domain = new URL(url).hostname;
+    
+   
     const ogResponse = await fetch(`${baseUrl}/api/og?url=${encodeURIComponent(url)}`);
     const ogData = await ogResponse.json();
 
@@ -17,30 +21,44 @@ async function extractMetadata(url: string): Promise<{
       console.error('Error fetching OG metadata from API:', ogData.error || `Status: ${ogResponse.status}`);
     }
 
-    const domain = new URL(url).hostname;
-    const faviconResponse = await fetch(`${baseUrl}/api/favicon?domain=${encodeURIComponent(domain)}`);
-    const faviconData = await faviconResponse.json();
-
-    if (faviconResponse.status !== 200 || faviconData.error) {
-      console.error('Error fetching favicon from API:', faviconData.error || `Status: ${faviconResponse.status}`);
+    // Fetch favicon using Google's service as primary method
+    let favicon: string;
+    try {
+      const faviconResponse = await fetch(`${baseUrl}/api/favicon?domain=${encodeURIComponent(domain)}`);
+      const faviconData = await faviconResponse.json();
+      
+      if (faviconResponse.status === 200 && faviconData.favicon) {
+        favicon = faviconData.favicon;
+      } else {
+        // Fallback to Google's favicon service directly
+        favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+      }
+    } catch (faviconError) {
+      console.error('Error fetching favicon:', faviconError);
+ 
+      favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
     }
 
-    let image = ogData.image; // Use ogData.image directly
-    // Handle relative image URLs if ogData.image is not absolute
+   
+    let image = ogData.image;
     if (image && !image.startsWith('http')) {
-      const imageUrlBase = new URL(url);
-      image = new URL(image, imageUrlBase.origin).toString();
+      try {
+        const imageUrlBase = new URL(url);
+        image = new URL(image, imageUrlBase.origin).toString();
+      } catch (imageError) {
+        console.error('Error resolving relative image URL:', imageError);
+        image = undefined;
+      }
     }
 
     const title = ogData.title || `Page from ${domain}`;
     const description = ogData.description || 'Check out this shared link';
-    const favicon = ogData.favicon || faviconData.favicon || `${new URL(url).origin}/favicon.ico`; // Prioritize ogData.favicon
 
     return {
       title,
       description,
       image,
-      favicon
+      favicon // This will always be a valid Google favicon URL
     };
   } catch (error) {
     console.error('Error in extractMetadata during API calls:', error);
@@ -48,7 +66,7 @@ async function extractMetadata(url: string): Promise<{
     return {
       title: `Page from ${hostname}`,
       description: 'Check out this shared link',
-      favicon: `${new URL(url).origin}/favicon.ico`
+      favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`
     };
   }
 }
@@ -61,7 +79,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 })
     }
 
-   
     let normalizedUrl: string;
     try {
       let urlToParse = url.trim();
@@ -79,8 +96,9 @@ export async function POST(request: NextRequest) {
       console.error('URL validation error:', error);
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
+
+
     try {
-      
       const existingShortCode = Object.entries(await getAllUrls()).find(
         ([_, storedUrl]) => storedUrl === normalizedUrl
       )?.[0];
@@ -94,12 +112,13 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       console.error('Error checking existing URL:', error);
- 
+     
     }
 
+    
     const metadata = await extractMetadata(normalizedUrl);
     
- 
+   
     const shortCode = await createShortCode(normalizedUrl, metadata);
     
     return NextResponse.json({ 
