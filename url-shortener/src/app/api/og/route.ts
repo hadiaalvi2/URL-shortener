@@ -1,6 +1,24 @@
 import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
+// Helper function for fetch with timeout
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const targetUrl = searchParams.get('url');
@@ -10,12 +28,8 @@ export async function GET(req: Request) {
   }
 
   try {
-    // Create AbortController for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-    // Fetch with proper headers to avoid blocking
-    const res = await fetch(targetUrl, {
+    // Fetch with proper headers to avoid blocking and with timeout
+    const res = await fetchWithTimeout(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; URL-Shortener-Bot/1.0)',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -23,11 +37,8 @@ export async function GET(req: Request) {
         'Accept-Encoding': 'gzip, deflate',
         'DNT': '1',
         'Connection': 'keep-alive'
-      },
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
+      }
+    }, 10000); // 10 second timeout
 
     if (!res.ok) {
       throw new Error(`Failed to fetch: ${res.status} ${res.statusText}`);
@@ -48,16 +59,13 @@ export async function GET(req: Request) {
                        $('meta[name="description"]').attr('content') ||
                        '';
 
-    // Extract image
     const image = $('meta[property="og:image"]').attr('content') || 
                   $('meta[name="twitter:image"]').attr('content') || 
                   $('meta[name="twitter:image:src"]').attr('content') ||
                   '';
 
-    // Extract favicon with comprehensive approach
     let favicon = '';
     
-    // Try to find favicon in order of preference
     const faviconSelectors = [
       'link[rel="icon"][type*="png"]',
       'link[rel="icon"][type*="svg"]',
@@ -80,19 +88,13 @@ export async function GET(req: Request) {
       const commonPaths = ['/favicon.ico', '/favicon.png', '/apple-touch-icon.png'];
       for (const path of commonPaths) {
         try {
-          const faviconController = new AbortController();
-          const faviconTimeoutId = setTimeout(() => faviconController.abort(), 5000);
-          
           const faviconUrl = new URL(path, targetUrl).href;
-          const faviconRes = await fetch(faviconUrl, { 
-            method: 'HEAD', 
-            signal: faviconController.signal,
+          const faviconRes = await fetchWithTimeout(faviconUrl, { 
+            method: 'HEAD',
             headers: {
               'User-Agent': 'Mozilla/5.0 (compatible; URL-Shortener-Bot/1.0)'
             }
-          });
-          
-          clearTimeout(faviconTimeoutId);
+          }, 5000); // 5 second timeout for favicon checks
           
           if (faviconRes.ok) {
             favicon = faviconUrl;
@@ -104,36 +106,28 @@ export async function GET(req: Request) {
       }
     }
 
-    // Ensure favicon is an absolute URL
     if (favicon && !favicon.startsWith('http')) {
       try {
         favicon = new URL(favicon, targetUrl).href;
       } catch {
-        favicon = ''; // Invalid URL, reset to empty
+        favicon = ''; 
       }
     }
 
-    // Validate that the favicon URL actually works
     if (favicon) {
       try {
-        const validateController = new AbortController();
-        const validateTimeoutId = setTimeout(() => validateController.abort(), 5000);
-        
-        const faviconTest = await fetch(favicon, { 
-          method: 'HEAD', 
-          signal: validateController.signal,
+        const faviconTest = await fetchWithTimeout(favicon, { 
+          method: 'HEAD',
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; URL-Shortener-Bot/1.0)'
           }
-        });
-        
-        clearTimeout(validateTimeoutId);
+        }, 5000); // 5 second timeout for favicon validation
         
         if (!faviconTest.ok) {
-          favicon = ''; // Favicon doesn't exist, reset
+          favicon = ''; 
         }
       } catch {
-        favicon = ''; // Error accessing favicon, reset
+        favicon = ''; 
       }
     }
 
@@ -141,16 +135,29 @@ export async function GET(req: Request) {
       title: title || undefined,
       description: description || undefined,
       image: image || undefined,
-      favicon: favicon || undefined // Will be undefined if no valid favicon found
+      favicon: favicon || undefined 
     });
   } catch (error) {
     console.error('Error fetching Open Graph metadata:', error);
+    
+    let errorMessage = 'Error fetching Open Graph metadata';
+    let statusCode = 500;
+    
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timeout - the server took too long to respond';
+        statusCode = 408; // Request Timeout
+      } else {
+        errorMessage = error.message;
+      }
+    }
+    
     return NextResponse.json(
       { 
-        error: 'Error fetching Open Graph metadata',
+        error: errorMessage,
         details: error instanceof Error ? error.message : 'Unknown error'
       }, 
-      { status: 500 }
+      { status: statusCode }
     );
   }
 }
