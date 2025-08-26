@@ -10,6 +10,7 @@ async function extractMetadata(url: string): Promise<{
   try {
     const ogResponse = await fetch(`/api/og?url=${encodeURIComponent(url)}`);
     const ogData = await ogResponse.json();
+    console.log('OG Data from API:', ogData); // Added log
 
     if (ogResponse.status !== 200 || ogData.error) {
       console.error('Error fetching OG metadata from API:', ogData.error || `Status: ${ogResponse.status}`);
@@ -18,6 +19,7 @@ async function extractMetadata(url: string): Promise<{
     const domain = new URL(url).hostname;
     const faviconResponse = await fetch(`/api/favicon?domain=${encodeURIComponent(domain)}`);
     const faviconData = await faviconResponse.json();
+    console.log('Favicon Data from API:', faviconData); // Added log
 
     if (faviconResponse.status !== 200 || faviconData.error) {
       console.error('Error fetching favicon from API:', faviconData.error || `Status: ${faviconResponse.status}`);
