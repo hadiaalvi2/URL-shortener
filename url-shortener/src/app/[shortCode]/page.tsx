@@ -72,7 +72,7 @@ export default async function RedirectPage(props: Props) {
     const { shortCode } = await props.params
     const data = await getUrl(shortCode)
 
-    const headersList = headers()
+    const headersList = await headers()
     const userAgent = headersList.get("user-agent") || ""
     const isSocialMediaBot =
       userAgent.includes("facebookexternalhit") ||
@@ -89,7 +89,7 @@ export default async function RedirectPage(props: Props) {
           <div className="max-w-md text-center">
             <h1 className="text-2xl font-semibold mb-2">Invalid or expired link</h1>
             <p className="text-muted-foreground">
-              The short code "{shortCode}" was not found.
+              The short code &quot;{shortCode}&quot; was not found.
             </p>
           </div>
         </main>
@@ -107,20 +107,11 @@ export default async function RedirectPage(props: Props) {
         <html>
           <head>
             <title>{title}</title>
-            {/* Debug: shortCode = {shortCode} */}
-            {/* Debug: data.originalUrl = {data.originalUrl} */}
-            {/* Debug: data.favicon = {data.favicon} */}
-            {data.favicon ? (
-              <link rel="icon" href={data.favicon} />
-            ) : (
-              data.originalUrl && (
-                <link rel="icon" href={`https://www.google.com/s2/favicons?domain=${new URL(data.originalUrl).hostname}&sz=64`} />
-              )
-            )}
+            {data.favicon && <link rel="icon" href={data.favicon} />}
             <meta property="og:title" content={title} />
             <meta property="og:description" content={description} />
             <meta property="og:image" content={imageUrl} />
-            <meta property="og:url" content={`${process.env.NEXT_PUBLIC_BASE_URL}/${shortCode}`} />
+            <meta property="og:url" content={`${baseUrl}/${shortCode}`} />
             <meta property="og:type" content="website" />
             <meta property="og:site_name" content="URL Shortener" />
             <meta name="twitter:card" content="summary_large_image" />
@@ -139,7 +130,7 @@ export default async function RedirectPage(props: Props) {
                       width={800}
                       height={400}
                       className="w-full h-full object-cover"
-                      unoptimized={!imageUrl.startsWith(`${process.env.NEXT_PUBLIC_BASE_URL}`)}
+                      unoptimized={!imageUrl.startsWith(baseUrl)}
                     />
                   </div>
                 )}
@@ -174,15 +165,20 @@ export default async function RedirectPage(props: Props) {
       )
     }
 
+
     redirect(data.originalUrl)
     
     return null
 
   } catch (error) {
+
     if (typeof error === 'object' && error !== null && 'digest' in error) {
+      
       throw error
     }
+    
     console.error('Error in RedirectPage:', error)
+    
     return (
       <main className="min-h-[60vh] flex items-center justify-center p-6">
         <div className="max-w-md text-center">
