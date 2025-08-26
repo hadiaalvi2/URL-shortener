@@ -58,7 +58,7 @@ export async function getOriginalUrl(shortCode: string): Promise<string | null> 
   }
 }
 
-export async function getUrl(shortCode: string): Promise<UrlData | undefined> {
+export async function getUrl(shortCode: string): Promise<UrlData | null> {
   return await getUrlFromKV(shortCode);
 }
 
