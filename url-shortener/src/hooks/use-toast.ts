@@ -19,8 +19,7 @@ const actionTypes = {
   REMOVE_TOAST: "REMOVE_TOAST",
 } as const
 
-// REMOVE THIS LINE - it's unused and causing the warning
-// type ActionType = keyof typeof actionTypes
+type ActionType = keyof typeof actionTypes
 
 let count = 0
 

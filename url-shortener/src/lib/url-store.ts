@@ -1,138 +1,157 @@
-import { supabase } from "./supabase"
+import fs from 'fs'
+import path from 'path'
 
-export interface UrlData {
+const dataDir = path.join(process.cwd(), 'data')
+const dataFile = path.join(dataDir, 'urls.json')
+
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true })
+}
+
+if (!fs.existsSync(dataFile)) {
+  fs.writeFileSync(dataFile, JSON.stringify({ codeToUrl: {}, urlToCode: {} }))
+}
+
+interface UrlData {
   originalUrl: string
   title?: string
   description?: string
   image?: string
   favicon?: string
-  createdAt: number
-  [key: string]: unknown
+}
+
+interface UrlStorage {
+  codeToUrl: Record<string, UrlData>
+  urlToCode: Record<string, string>
+}
+
+function readStorage(): UrlStorage {
+  try {
+    const data = fs.readFileSync(dataFile, 'utf8')
+    return JSON.parse(data)
+  } catch (error) {
+    console.error('Error reading URL storage:', error)
+    return { codeToUrl: {}, urlToCode: {} }
+  }
+}
+
+function writeStorage(storage: UrlStorage): void {
+  try {
+    fs.writeFileSync(dataFile, JSON.stringify(storage, null, 2))
+  } catch (error) {
+    console.error('Error writing URL storage:', error)
+  }
 }
 
 function normalizeUrl(url: string): string {
   try {
-    let urlToNormalize = url
-    if (!urlToNormalize.startsWith("http://") && !urlToNormalize.startsWith("https://")) {
-      urlToNormalize = "https://" + urlToNormalize
+    let urlToNormalize = url;
+    
+    if (!urlToNormalize.startsWith('http://') && !urlToNormalize.startsWith('https://')) {
+      urlToNormalize = 'https://' + urlToNormalize;
     }
-
-    const urlObj = new URL(urlToNormalize)
-    let normalized = urlObj.toString()
-
-    if (normalized.endsWith("/")) {
-      normalized = normalized.slice(0, -1)
+    
+    const urlObj = new URL(urlToNormalize);
+    
+    let normalized = urlObj.toString();
+    
+    if (normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1);
     }
-
-    const hostname = urlObj.hostname.toLowerCase()
-    normalized = normalized.replace(urlObj.hostname, hostname)
-
-    return normalized
+    
+    const hostname = urlObj.hostname.toLowerCase();
+    normalized = normalized.replace(urlObj.hostname, hostname);
+    
+    return normalized;
   } catch (error) {
-    console.error("Error normalizing URL:", error)
-    return url.trim()
+    console.error('Error normalizing URL:', error);
+    return url.trim();
   }
 }
 
-export async function createShortCode(url: string, metadata?: Partial<UrlData>): Promise<string> {
-  if (!url || typeof url !== "string") {
-    throw new Error("Invalid URL provided")
+export async function getOriginalUrl(shortCode: string): Promise<string | null> {
+  try {
+    const storage = readStorage();
+    
+   
+    if (storage.codeToUrl && storage.codeToUrl[shortCode]) {
+      return storage.codeToUrl[shortCode].originalUrl;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error getting original URL:', error);
+    return null;
+  }
+}
+
+export function getUrl(shortCode: string): UrlData | undefined {
+  const storage = readStorage()
+  return storage.codeToUrl[shortCode]
+}
+
+export function createShortCode(url: string, metadata?: Partial<UrlData>): string {
+  const storage = readStorage()
+  
+  if (!url || typeof url !== 'string') {
+    throw new Error('Invalid URL provided');
+  }
+  
+  const normalizedUrl = normalizeUrl(url);
+  
+  const existingShortCode = storage.urlToCode ? storage.urlToCode[normalizedUrl] : undefined;
+  
+  if (existingShortCode) {
+    
+    if (storage.codeToUrl && storage.codeToUrl[existingShortCode]) {
+      return existingShortCode;
+    } else {
+      
+      if (storage.urlToCode) {
+        delete storage.urlToCode[normalizedUrl];
+      }
+    }
   }
 
-  const normalizedUrl = normalizeUrl(url)
-
-  const { data: existingUrls, error: searchError } = await supabase
-    .from("urls")
-    .select("short_code")
-    .eq("original_url", normalizedUrl)
-    .limit(1)
-
-  if (searchError) {
-    console.error("Error searching for existing URL:", searchError)
-  } else if (existingUrls && existingUrls.length > 0) {
-    return existingUrls[0].short_code
-  }
-
-  let shortCode: string
-  let attempts = 0
-
+  let shortCode: string;
+  let attempts = 0;
+  
   do {
-    shortCode = Math.random().toString(36).substring(2, 10)
-    attempts++
-
+    shortCode = Math.random().toString(36).substring(2, 10);
+    attempts++;
+    
     if (attempts > 10) {
-      throw new Error("Failed to generate unique short code")
+      throw new Error('Failed to generate unique short code');
     }
+  } while (storage.codeToUrl && storage.codeToUrl[shortCode]);
 
-    const { data: existing } = await supabase.from("urls").select("short_code").eq("short_code", shortCode).limit(1)
+  if (!storage.codeToUrl) storage.codeToUrl = {};
+  if (!storage.urlToCode) storage.urlToCode = {};
 
-    if (!existing || existing.length === 0) {
-      break
-    }
-  } while (attempts <= 10)
-
-  const { error } = await supabase.from("urls").insert({
-    short_code: shortCode,
-    original_url: normalizedUrl,
+  // Store the data
+  storage.codeToUrl[shortCode] = {
+    originalUrl: url, 
     title: metadata?.title,
     description: metadata?.description,
     image: metadata?.image,
     favicon: metadata?.favicon,
-    created_at: new Date().toISOString(),
-  })
-
-  if (error) {
-    console.error("Error storing URL:", error)
-    throw new Error("Failed to store URL")
-  }
-
-  return shortCode
+  };
+  
+  storage.urlToCode[normalizedUrl] = shortCode; 
+  
+  writeStorage(storage);
+  return shortCode;
 }
 
-export async function getUrl(shortCode: string): Promise<string | null> {
-  const { data, error } = await supabase.from("urls").select("original_url").eq("short_code", shortCode).limit(1)
-
-  if (error) {
-    console.error("Error fetching URL:", error)
-    return null
+export function getAllUrls(): { shortCode: string; originalUrl: string }[] {
+  const storage = readStorage();
+  
+  if (!storage.codeToUrl) {
+    return [];
   }
-
-  return data && data.length > 0 ? data[0].original_url : null
-}
-
-export async function getUrlData(shortCode: string): Promise<UrlData | undefined> {
-  const { data, error } = await supabase.from("urls").select("*").eq("short_code", shortCode).limit(1)
-
-  if (error) {
-    console.error("Error fetching URL data:", error)
-    return undefined
-  }
-
-  if (!data || data.length === 0) {
-    return undefined
-  }
-
-  const row = data[0]
-  return {
-    originalUrl: row.original_url,
-    title: row.title,
-    description: row.description,
-    image: row.image,
-    favicon: row.favicon,
-    createdAt: new Date(row.created_at).getTime(),
-  }
-}
-
-export async function getAllUrls(): Promise<{ shortCode: string; originalUrl: string }[]> {
-  const { data, error } = await supabase.from("urls").select("short_code, original_url")
-
-  if (error) {
-    console.error("Error fetching all URLs:", error)
-    return []
-  }
-
-  return data.map((row) => ({
-    shortCode: row.short_code,
-    originalUrl: row.original_url,
-  }))
+  
+  return Object.entries(storage.codeToUrl).map(([shortCode, data]) => ({
+    shortCode,
+    originalUrl: data.originalUrl,
+  }));
 }
