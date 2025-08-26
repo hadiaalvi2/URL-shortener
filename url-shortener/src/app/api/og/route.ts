@@ -20,6 +20,7 @@ export async function GET(req: Request) {
 
     // More robust favicon extraction logic
     let favicon = $('link[rel="apple-touch-icon"]').attr('href') ||
+                  $('link[rel="apple-touch-icon-precomposed"]').attr('href') ||
                   $('link[rel*="icon"][sizes="192x192"]').attr('href') || 
                   $('link[rel*="icon"][sizes="180x180"]').attr('href') || 
                   $('link[rel*="icon"][sizes="32x32"]').attr('href') ||
@@ -28,7 +29,10 @@ export async function GET(req: Request) {
                   $('link[rel="icon"][type="image/svg+xml"]').attr('href') ||
                   $('link[rel="icon"]').attr('href') ||
                   $('link[rel="shortcut icon"]').attr('href') ||
-                  $('link[type="image/x-icon"]').attr('href');  
+                  $('link[type="image/x-icon"]').attr('href') ||
+                  $('meta[itemprop="image"]').attr('content') || // Fallback for some sites
+                  $('meta[property="og:image"]').attr('content') || // Use OG image as last resort if no favicon
+                  undefined; // Explicitly undefined if no favicon is found
     if (favicon && !favicon.startsWith('http')) {
       try {
         favicon = new URL(favicon, targetUrl).href;
