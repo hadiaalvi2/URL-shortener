@@ -29,17 +29,20 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const classes = `${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`
 
+    // Clean up props to remove any potentially problematic attributes
+    const cleanProps = { ...props } as Record<string, unknown>;
+    delete cleanProps.fdprocessedid;
+
     if (asChild && React.isValidElement(children)) {
       return React.cloneElement(children, {
-        ...props,
+        ...cleanProps,
         className: classes,
         ref,
       } as React.HTMLAttributes<HTMLElement>)
     }
 
-
     return (
-      <button className={classes} ref={ref} {...props}>
+      <button className={classes} ref={ref} {...cleanProps}>
         {children}
       </button>
     )
