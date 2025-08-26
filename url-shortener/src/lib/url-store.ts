@@ -148,7 +148,6 @@ export function createShortCode(url: string, metadata?: Partial<UrlData>): strin
     image: metadata?.image,
     favicon: metadata?.favicon,
   };
-  
   storage.urlToCode[normalizedUrl] = shortCode;
   
   writeStorage(storage);

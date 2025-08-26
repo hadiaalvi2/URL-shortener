@@ -1,0 +1,14 @@
+{
+  "codeToUrl": {
+    "thkbbbsw": {
+      "originalUrl": "https://claude.ai/chat/72c43c17-a368-452d-b353-67a7cb3b5f02",
+      "title": "Claude",
+      "description": "Talk with Claude, an AI assistant from Anthropic",
+      "image": "https://claude.ai/images/claude_ogimage.png",
+      "favicon": "https://claude.ai/favicon.ico"
+    }
+  },
+  "urlToCode": {
+    "https://claude.ai/chat/72c43c17-a368-452d-b353-67a7cb3b5f02": "thkbbbsw"
+  }
+}
