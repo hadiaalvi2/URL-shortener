@@ -146,8 +146,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-async function getAllUrls(): Promise<Record<string, string>> {
-
-  return {};
-}

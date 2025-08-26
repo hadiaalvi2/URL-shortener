@@ -6,9 +6,17 @@
       "description": "Talk with Claude, an AI assistant from Anthropic",
       "image": "https://claude.ai/images/claude_ogimage.png",
       "favicon": "https://claude.ai/favicon.ico"
+    },
+    "2ossoa84": {
+      "originalUrl": "https://chatgpt.com/c/68ad5d99-a8d8-8327-bfb6-cbb51f072810",
+      "title": "ChatGPT",
+      "description": "ChatGPT helps you get answers, find inspiration and be more productive. It is free to use and easy to try. Just ask and ChatGPT can help with writing, learning, brainstorming and more.",
+      "image": "https://cdn.oaistatic.com/assets/chatgpt-share-og-u7j5uyao.webp",
+      "favicon": "https://cdn.oaistatic.com/assets/favicon-eex17e9e.ico"
     }
   },
   "urlToCode": {
-    "https://claude.ai/chat/72c43c17-a368-452d-b353-67a7cb3b5f02": "thkbbbsw"
+    "https://claude.ai/chat/72c43c17-a368-452d-b353-67a7cb3b5f02": "thkbbbsw",
+    "https://chatgpt.com/c/68ad5d99-a8d8-8327-bfb6-cbb51f072810": "2ossoa84"
   }
 }
