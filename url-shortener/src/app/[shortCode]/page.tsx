@@ -107,7 +107,13 @@ export default async function RedirectPage(props: Props) {
         <html>
           <head>
             <title>{title}</title>
-            {data.favicon && <link rel="icon" href={data.favicon} />}
+            {data.favicon ? (
+              <link rel="icon" href={data.favicon} />
+            ) : (
+              data.originalUrl && (
+                <link rel="icon" href={`https://www.google.com/s2/favicons?domain=${new URL(data.originalUrl).hostname}&sz=64`} />
+              )
+            )}
             <meta property="og:title" content={title} />
             <meta property="og:description" content={description} />
             <meta property="og:image" content={imageUrl} />
