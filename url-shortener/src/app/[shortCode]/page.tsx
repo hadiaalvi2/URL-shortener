@@ -107,6 +107,9 @@ export default async function RedirectPage(props: Props) {
         <html>
           <head>
             <title>{title}</title>
+            {/* Debug: shortCode = {shortCode} */}
+            {/* Debug: data.originalUrl = {data.originalUrl} */}
+            {/* Debug: data.favicon = {data.favicon} */}
             {data.favicon ? (
               <link rel="icon" href={data.favicon} />
             ) : (

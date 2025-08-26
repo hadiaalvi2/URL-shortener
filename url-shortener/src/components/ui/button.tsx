@@ -42,7 +42,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     }
 
     return (
-      <button className={classes} ref={ref} {...cleanProps}>
+      <button className={classes} ref={ref} {...cleanProps} suppressHydrationWarning>
         {children}
       </button>
     )
