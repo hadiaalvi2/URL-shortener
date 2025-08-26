@@ -28,16 +28,12 @@ export async function GET(req: Request) {
                   $('link[rel="icon"][type="image/svg+xml"]').attr('href') ||
                   $('link[rel="icon"]').attr('href') ||
                   $('link[rel="shortcut icon"]').attr('href') ||
-                  $('link[type="image/x-icon"]').attr('href') ||
-                  '/favicon.ico';
-
-    // Ensure favicon is an absolute URL
+                  $('link[type="image/x-icon"]').attr('href');  
     if (favicon && !favicon.startsWith('http')) {
       try {
         favicon = new URL(favicon, targetUrl).href;
       } catch (e) {
-        console.error("Error resolving relative favicon URL:", favicon, e);
-        favicon = new URL('/favicon.ico', new URL(targetUrl).origin).href; 
+        favicon = undefined; 
       }
     }
 
