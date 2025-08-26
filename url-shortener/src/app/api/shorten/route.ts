@@ -28,8 +28,8 @@ async function extractMetadata(url: string): Promise<{
     let image = ogData.image; // Use ogData.image directly
     // Handle relative image URLs if ogData.image is not absolute
     if (image && !image.startsWith('http')) {
-      const baseUrl = new URL(url);
-      image = new URL(image, baseUrl.origin).toString();
+      const imageUrlBase = new URL(url);
+      image = new URL(image, imageUrlBase.origin).toString();
     }
 
     const title = ogData.title || `Page from ${domain}`;
