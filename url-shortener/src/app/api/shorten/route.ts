@@ -11,12 +11,14 @@ async function extractMetadata(url: string): Promise<{
   favicon?: string;
 }> {
   try {
- 
+    console.log(`[extractMetadata] Attempting to extract metadata for: ${url}`);
     const domain = new URL(url).hostname;
     
    
     const ogResponse = await fetch(`${baseUrl}/api/og?url=${encodeURIComponent(url)}`);
     const ogData = await ogResponse.json();
+
+    console.log(`[extractMetadata] OG API response for ${url}:`, ogData);
 
     if (ogResponse.status !== 200 || ogData.error) {
       console.error('Error fetching OG metadata from API:', ogData.error || `Status: ${ogResponse.status}`);
@@ -27,6 +29,8 @@ async function extractMetadata(url: string): Promise<{
     try {
       const faviconResponse = await fetch(`${baseUrl}/api/favicon?domain=${encodeURIComponent(domain)}`);
       const faviconData = await faviconResponse.json();
+
+      console.log(`[extractMetadata] Favicon API response for ${domain}:`, faviconData);
       
       if (faviconResponse.status === 200 && faviconData.favicon) {
         favicon = faviconData.favicon;
@@ -55,12 +59,14 @@ async function extractMetadata(url: string): Promise<{
     const title = ogData.title || `Page from ${domain}`;
     const description = ogData.description || 'Check out this shared link';
 
-    return {
+    const finalMetadata = {
       title,
       description,
       image,
       favicon // This will always be a valid Google favicon URL
     };
+    console.log(`[extractMetadata] Final metadata for ${url}:`, finalMetadata);
+    return finalMetadata;
   } catch (error) {
     console.error('Error in extractMetadata during API calls:', error);
     const hostname = new URL(url).hostname;
