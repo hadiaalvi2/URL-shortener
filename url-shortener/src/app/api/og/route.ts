@@ -26,8 +26,8 @@ export async function GET(req: Request) {
       favicon: favicon.startsWith('http') ? favicon : new URL(favicon, targetUrl).href
     });
   } catch (error) {
-  console.error('Error generating favicon:', error)
-  return new Response('Error generating favicon', { status: 500 })
+  console.error('Error fetching Open Graph metadata:', error)
+  return new Response('Error fetching Open Graph metadata', { status: 500 })
 }
 
 }

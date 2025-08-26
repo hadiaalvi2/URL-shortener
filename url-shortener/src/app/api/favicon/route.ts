@@ -12,7 +12,7 @@ export async function GET(req: Request) {
     const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
     return NextResponse.json({ favicon: faviconUrl });
   } catch (error) {
-  console.error('Error generating favicon:', error)
-  return new Response('Error generating favicon', { status: 500 })
+  console.error('Error fetching favicon:', error)
+  return new Response('Error fetching favicon', { status: 500 })
 }
 }
