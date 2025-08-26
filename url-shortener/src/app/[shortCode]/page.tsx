@@ -34,6 +34,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         : new URL(data.image, metadataBase).toString()
       : new URL("/og-default.png", metadataBase).toString()
 
+    console.log(`[generateMetadata] Image URL: ${imageUrl}`)
+    console.log(`[generateMetadata] Favicon URL: ${data.favicon}`)
+
     return {
       metadataBase,
       title,
