@@ -30,9 +30,14 @@ export async function fetchPageMetadata(url: string) {
           favicon = new URL(favicon, baseUrl).toString()
         }
       } catch (e) {
+        console.error("Error constructing favicon URL:", e)
         favicon = undefined
       }
     }
+    console.log(`Scraped Title: ${title}`)
+    console.log(`Scraped Description: ${description}`)
+    console.log(`Scraped Image: ${image}`)
+    console.log(`Scraped Favicon: ${favicon}`)
 
     return {
       title: title || undefined,
