@@ -107,6 +107,7 @@ export default async function RedirectPage(props: Props) {
         <html>
           <head>
             <title>{title}</title>
+            {data.favicon && <link rel="icon" href={data.favicon} />}
             <meta property="og:title" content={title} />
             <meta property="og:description" content={description} />
             <meta property="og:image" content={imageUrl} />
