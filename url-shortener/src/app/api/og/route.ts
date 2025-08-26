@@ -10,6 +10,10 @@ export async function GET(req: Request) {
   }
 
   try {
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
     // Fetch with proper headers to avoid blocking
     const res = await fetch(targetUrl, {
       headers: {
@@ -20,8 +24,10 @@ export async function GET(req: Request) {
         'DNT': '1',
         'Connection': 'keep-alive'
       },
-      timeout: 10000 // 10 second timeout
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!res.ok) {
       throw new Error(`Failed to fetch: ${res.status} ${res.statusText}`);
@@ -42,14 +48,16 @@ export async function GET(req: Request) {
                        $('meta[name="description"]').attr('content') ||
                        '';
 
-   
+    // Extract image
     const image = $('meta[property="og:image"]').attr('content') || 
                   $('meta[name="twitter:image"]').attr('content') || 
                   $('meta[name="twitter:image:src"]').attr('content') ||
                   '';
 
+    // Extract favicon with comprehensive approach
     let favicon = '';
     
+    // Try to find favicon in order of preference
     const faviconSelectors = [
       'link[rel="icon"][type*="png"]',
       'link[rel="icon"][type*="svg"]',
@@ -72,14 +80,20 @@ export async function GET(req: Request) {
       const commonPaths = ['/favicon.ico', '/favicon.png', '/apple-touch-icon.png'];
       for (const path of commonPaths) {
         try {
+          const faviconController = new AbortController();
+          const faviconTimeoutId = setTimeout(() => faviconController.abort(), 5000);
+          
           const faviconUrl = new URL(path, targetUrl).href;
           const faviconRes = await fetch(faviconUrl, { 
             method: 'HEAD', 
-            timeout: 5000,
+            signal: faviconController.signal,
             headers: {
               'User-Agent': 'Mozilla/5.0 (compatible; URL-Shortener-Bot/1.0)'
             }
           });
+          
+          clearTimeout(faviconTimeoutId);
+          
           if (faviconRes.ok) {
             favicon = faviconUrl;
             break;
@@ -90,29 +104,36 @@ export async function GET(req: Request) {
       }
     }
 
+    // Ensure favicon is an absolute URL
     if (favicon && !favicon.startsWith('http')) {
       try {
         favicon = new URL(favicon, targetUrl).href;
       } catch {
-        favicon = ''; 
+        favicon = ''; // Invalid URL, reset to empty
       }
     }
 
-
+    // Validate that the favicon URL actually works
     if (favicon) {
       try {
+        const validateController = new AbortController();
+        const validateTimeoutId = setTimeout(() => validateController.abort(), 5000);
+        
         const faviconTest = await fetch(favicon, { 
           method: 'HEAD', 
-          timeout: 5000,
+          signal: validateController.signal,
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; URL-Shortener-Bot/1.0)'
           }
         });
+        
+        clearTimeout(validateTimeoutId);
+        
         if (!faviconTest.ok) {
-          favicon = ''; 
+          favicon = ''; // Favicon doesn't exist, reset
         }
       } catch {
-        favicon = ''; 
+        favicon = ''; // Error accessing favicon, reset
       }
     }
 
@@ -120,7 +141,7 @@ export async function GET(req: Request) {
       title: title || undefined,
       description: description || undefined,
       image: image || undefined,
-      favicon: favicon || undefined 
+      favicon: favicon || undefined // Will be undefined if no valid favicon found
     });
   } catch (error) {
     console.error('Error fetching Open Graph metadata:', error);
