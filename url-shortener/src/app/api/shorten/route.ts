@@ -8,74 +8,41 @@ async function extractMetadata(url: string): Promise<{
   favicon?: string;
 }> {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; LinkPreviewBot/1.0; +http://linkpreviewbot.com)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      },
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const html = await response.text();
-    const hostname = new URL(url).hostname;
-    
-    // Extract title
-    const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].trim() : `Page from ${hostname}`;
-    
-    // Extract description
-    const descMatch = html.match(/<meta name="description" content="(.*?)"/i) || 
-                     html.match(/<meta property="og:description" content="(.*?)"/i);
-    const description = descMatch ? descMatch[1].trim() : 'Check out this shared link';
-    
-    // Extract image
-    const imageMatch = html.match(/<meta property="og:image" content="(.*?)"/i) ||
-                      html.match(/<meta name="twitter:image:src" content="(.*?)"/i) ||
-                      html.match(/<meta name="twitter:image" content="(.*?)"/i);
-    let image = imageMatch ? imageMatch[1] : undefined;
+    const ogResponse = await fetch(`/api/og?url=${encodeURIComponent(url)}`);
+    const ogData = await ogResponse.json();
 
-    // Handle relative image URLs
+    if (ogResponse.status !== 200 || ogData.error) {
+      console.error('Error fetching OG metadata from API:', ogData.error || `Status: ${ogResponse.status}`);
+    }
+
+    const domain = new URL(url).hostname;
+    const faviconResponse = await fetch(`/api/favicon?domain=${encodeURIComponent(domain)}`);
+    const faviconData = await faviconResponse.json();
+
+    if (faviconResponse.status !== 200 || faviconData.error) {
+      console.error('Error fetching favicon from API:', faviconData.error || `Status: ${faviconResponse.status}`);
+    }
+
+    let image = ogData.image;
+    // Handle relative image URLs if ogData.image is not absolute
     if (image && !image.startsWith('http')) {
       const baseUrl = new URL(url);
       image = new URL(image, baseUrl.origin).toString();
     }
-    
-    // Extract favicon
-    const faviconMatch = html.match(/<link rel="icon" href="(.*?)"/i) ||
-                        html.match(/<link rel="shortcut icon" href="(.*?)"/i) ||
-                        html.match(/<link rel="apple-touch-icon" href="(.*?)"/i) ||
-                        html.match(/<link rel="icon" type="image\/x-icon" href="(.*?)"/i);
-    
-    let favicon = faviconMatch ? faviconMatch[1] : `${new URL(url).origin}/favicon.ico`;
-    
-    if (favicon && !favicon.startsWith('http')) {
-      const baseUrl = new URL(url);
-      favicon = new URL(favicon, baseUrl.origin).toString();
-    }
-    
+
+    const title = ogData.title || `Page from ${domain}`;
+    const description = ogData.description || 'Check out this shared link';
+    const favicon = faviconData.favicon || `${new URL(url).origin}/favicon.ico`;
+
     return {
       title,
       description,
       image,
       favicon
     };
-    
   } catch (error) {
-    console.error('Error extracting metadata:', error);
+    console.error('Error in extractMetadata during API calls:', error);
     const hostname = new URL(url).hostname;
-    
     return {
       title: `Page from ${hostname}`,
       description: 'Check out this shared link',
