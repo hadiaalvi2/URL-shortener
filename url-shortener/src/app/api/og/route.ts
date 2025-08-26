@@ -63,43 +63,60 @@ export async function GET(req: Request) {
                   $('meta[name="twitter:image:src"]').attr('content') ||
                   $('meta[itemprop="image"]').attr('content');
 
-    interface FaviconCandidate {
-      href: string;
-      priority: number;
-      sizes: string | null;
-    }
-    const faviconCandidates: FaviconCandidate[] = [];
+    // Exhaustive favicon extraction logic
+    let favicon: string | undefined = undefined;
+    const faviconCandidates: { href: string; priority: number; sizes: string | null }[] = [];
 
-    // High priority - apple touch icons (usually highest quality)
+    // Function to resolve relative URLs to absolute
+    const resolveUrl = (url: string, baseUrl: string): string | undefined => {
+      if (!url || url.startsWith('data:') || url.startsWith('javascript:')) {
+        return undefined;
+      }
+      try {
+        const absoluteUrl = new URL(url, baseUrl).href;
+        return absoluteUrl;
+      } catch (e) {
+        return undefined;
+      }
+    };
+
+    // High priority: Apple Touch Icons (often highest quality)
     $('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]').each((_, el) => {
       const href = $(el).attr('href');
-      const sizes = $(el).attr('sizes') || null; // Convert undefined to null
+      const sizes = $(el).attr('sizes') || null;
       if (href) {
-        faviconCandidates.push({ href, priority: sizes === '180x180' ? 100 : 90, sizes });
+        faviconCandidates.push({ href, priority: 100, sizes });
       }
     });
 
-    // High priority - icons with larger sizes
+    // High priority: Mask Icon (Safari Pinned Tabs)
+    $('link[rel="mask-icon"]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (href) {
+        faviconCandidates.push({ href, priority: 95, sizes: null });
+      }
+    });
+
+    // Standard Icons with Sizes (prioritize larger sizes)
     $('link[rel*="icon"]').each((_, el) => {
       const href = $(el).attr('href');
-      const sizes = $(el).attr('sizes') || null; // Convert undefined to null
-      let priority = 80;
-      
+      const sizes = $(el).attr('sizes') || null;
+      let priority = 80; // Default priority for generic icons
+
       if (sizes) {
-        if (sizes.includes('192') || sizes.includes('180')) priority = 95;
+        if (sizes.includes('192') || sizes.includes('180')) priority = 90;
         else if (sizes.includes('32')) priority = 85;
         else if (sizes.includes('16')) priority = 75;
       }
-      
-      if (href && !href.includes('data:') && !href.startsWith('javascript:')) {
+      if (href) {
         faviconCandidates.push({ href, priority, sizes });
       }
     });
 
-    // Medium priority - shortcut icon and other variants
-    $('link[rel="shortcut icon"], link[rel="icon shortcut"], link[type="image/x-icon"]').each((_, el) => {
+    // Fallback to other icon types (png, svg, x-icon, etc.)
+    $('link[rel="icon"][type="image/png"], link[rel="icon"][type="image/svg+xml"], link[rel="shortcut icon"], link[type="image/x-icon"]').each((_, el) => {
       const href = $(el).attr('href');
-      if (href && !href.includes('data:') && !href.startsWith('javascript:')) {
+      if (href) {
         faviconCandidates.push({ href, priority: 70, sizes: null });
       }
     });
@@ -107,85 +124,39 @@ export async function GET(req: Request) {
     // Sort candidates by priority (highest first)
     faviconCandidates.sort((a, b) => b.priority - a.priority);
 
-    let favicon = faviconCandidates[0]?.href;
-
-    // Resolve relative URLs
-    const resolveUrl = (url: string, baseUrl: string): string => {
-      if (!url) return '';
-
-      // Handle data URLs and absolute URLs
-      if (url.startsWith('data:') || url.startsWith('javascript:')) {
-        return '';
-      }
-      
-      if (url.startsWith('//')) {
-        const urlObj = new URL(baseUrl);
-        return `${urlObj.protocol}${url}`;
-      }
-      
-      if (url.startsWith('http')) {
-        return url;
-      }
-      
-      if (url.startsWith('/')) {
-        const urlObj = new URL(baseUrl);
-        return `${urlObj.origin}${url}`;
-      }
-      
-      // Handle relative paths
-      try {
-        return new URL(url, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).href;
-      } catch (e: unknown) {
-        return '';
-      }
-    };
-
-    if (favicon) {
-      favicon = resolveUrl(favicon, normalizedUrl);
+    // Select the best favicon and make it absolute
+    if (faviconCandidates.length > 0) {
+      favicon = resolveUrl(faviconCandidates[0].href, targetUrl);
     }
 
     // Fallback to common favicon locations if no favicon found in meta tags
     if (!favicon) {
-      const urlObj = new URL(normalizedUrl);
       const commonFaviconPaths = [
+        '/apple-touch-icon.png',
         '/favicon.ico',
         '/favicon.png',
-        '/favicon.jpg',
-        '/favicon.jpeg',
-        '/favicon.svg',
-        '/favicon.ico?', // Some sites use query parameters
-        '/apple-touch-icon.png',
-        '/apple-touch-icon-precomposed.png'
+        '/favicon.gif',
+        '/android-chrome-192x192.png',
       ];
-
       for (const path of commonFaviconPaths) {
-        try {
-          const testUrl = new URL(path, normalizedUrl).href;
-          // You could add a HEAD request here to verify the favicon exists
-          favicon = testUrl;
+        const resolvedPath = resolveUrl(path, targetUrl);
+        if (resolvedPath) {
+          // In a real scenario, you might want to perform a HEAD request here
+          // to verify the favicon exists before setting it.
+          favicon = resolvedPath;
           break;
-        } catch (e: unknown) {
-          continue;
         }
       }
     }
-
-    // Final fallback - use domain root favicon.ico
-    if (!favicon) {
-      try {
-        const urlObj = new URL(normalizedUrl);
-        favicon = `${urlObj.origin}/favicon.ico`;
-      } catch (e: unknown) {
-        // If all else fails, no favicon
-      }
-    }
+    
+    console.log('Resolved Favicon URL (src/app/api/og/route.ts):', favicon);
 
     return NextResponse.json({
       success: true,
       data: {
         title: title || null,
         description: description || null,
-        image: image ? resolveUrl(image, normalizedUrl) : null,
+        image: image ? resolveUrl(image, targetUrl) : null,
         favicon: favicon || null,
         url: normalizedUrl
       }
