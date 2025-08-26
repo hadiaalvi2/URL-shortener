@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createShortCode, getUrl } from "@/lib/url-store"
+import { createShortCode, getUrl, getAllUrls } from "@/lib/url-store"
 
 async function extractMetadata(url: string): Promise<{
   title?: string;
