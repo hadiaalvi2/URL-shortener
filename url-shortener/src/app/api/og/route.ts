@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     try {
       const urlObj = new URL(targetUrl);
       normalizedUrl = urlObj.href;
-    } catch (e) {
+    } catch (e: unknown) {
       return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
     }
 
@@ -63,13 +63,17 @@ export async function GET(req: Request) {
                   $('meta[name="twitter:image:src"]').attr('content') ||
                   $('meta[itemprop="image"]').attr('content');
 
-    // Enhanced favicon extraction with priority sorting
-    const faviconCandidates = [];
+    interface FaviconCandidate {
+      href: string;
+      priority: number;
+      sizes: string | null;
+    }
+    const faviconCandidates: FaviconCandidate[] = [];
 
     // High priority - apple touch icons (usually highest quality)
     $('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]').each((_, el) => {
       const href = $(el).attr('href');
-      const sizes = $(el).attr('sizes');
+      const sizes = $(el).attr('sizes') || null; // Convert undefined to null
       if (href) {
         faviconCandidates.push({ href, priority: sizes === '180x180' ? 100 : 90, sizes });
       }
@@ -78,7 +82,7 @@ export async function GET(req: Request) {
     // High priority - icons with larger sizes
     $('link[rel*="icon"]').each((_, el) => {
       const href = $(el).attr('href');
-      const sizes = $(el).attr('sizes');
+      const sizes = $(el).attr('sizes') || null; // Convert undefined to null
       let priority = 80;
       
       if (sizes) {
@@ -131,7 +135,7 @@ export async function GET(req: Request) {
       // Handle relative paths
       try {
         return new URL(url, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).href;
-      } catch (e) {
+      } catch (e: unknown) {
         return '';
       }
     };
@@ -160,7 +164,7 @@ export async function GET(req: Request) {
           // You could add a HEAD request here to verify the favicon exists
           favicon = testUrl;
           break;
-        } catch (e) {
+        } catch (e: unknown) {
           continue;
         }
       }
@@ -171,7 +175,7 @@ export async function GET(req: Request) {
       try {
         const urlObj = new URL(normalizedUrl);
         favicon = `${urlObj.origin}/favicon.ico`;
-      } catch (e) {
+      } catch (e: unknown) {
         // If all else fails, no favicon
       }
     }
@@ -187,10 +191,10 @@ export async function GET(req: Request) {
       }
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching Open Graph metadata:', error);
     
-    if (error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       return NextResponse.json(
         { error: 'Request timeout - website took too long to respond' },
         { status: 408 }
@@ -200,7 +204,7 @@ export async function GET(req: Request) {
     return NextResponse.json(
       { 
         error: 'Error fetching Open Graph metadata',
-        details: error.message 
+        details: (error as Error).message 
       },
       { status: 500 }
     );

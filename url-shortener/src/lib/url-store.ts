@@ -15,7 +15,10 @@ export interface UrlStorage {
 
 // Vercel KV functions
 export async function getUrlFromKV(shortCode: string): Promise<UrlData | null> {
-  return await kv.get<UrlData>(`url:${shortCode}`)
+  console.log(`Attempting to get URL data for short code: ${shortCode}`);
+  const data = await kv.get<UrlData>(`url:${shortCode}`);
+  console.log(`Data for ${shortCode}:`, data);
+  return data;
 }
 
 export async function saveUrlToKV(shortCode: string, data: UrlData) {
@@ -69,11 +72,8 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
 
   const normalizedUrl = normalizeUrl(url);
 
-  // Check if URL already exists in KV
-  const allUrls = await getAllUrls(); // Temporarily use getAllUrls, will refactor this later
-  const existingShortCode = Object.entries(allUrls).find(
-    ([_, storedUrl]) => storedUrl === normalizedUrl
-  )?.[0];
+  // Check if URL already exists in KV using a direct lookup
+  const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`);
 
   if (existingShortCode) {
     // Verify the short code still exists in KV
@@ -113,9 +113,7 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
 }
 
 export async function getAllUrls(): Promise<Record<string, string>> {
-  // This implementation needs to be updated to iterate through KV keys
-  // or maintain a separate list of short codes.
-  // For now, it will return an empty object to prevent runtime errors.
+ 
   console.warn("getAllUrls is not fully implemented for Vercel KV and may not return all URLs.");
   const keys = await kv.keys('url:*'); // Get all keys that start with 'url:'
   const urls: Record<string, string> = {};
