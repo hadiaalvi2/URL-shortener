@@ -10,9 +10,10 @@ async function extractMetadata(url: string): Promise<{
   favicon?: string;
 }> {
   try {
+    console.log('Base URL in extractMetadata:', baseUrl); 
     const ogResponse = await fetch(`${baseUrl}/api/og?url=${encodeURIComponent(url)}`);
     const ogData = await ogResponse.json();
-    console.log('OG Data from API:', ogData); // Added log
+    console.log('OG Data from API:', ogData); 
 
     if (ogResponse.status !== 200 || ogData.error) {
       console.error('Error fetching OG metadata from API:', ogData.error || `Status: ${ogResponse.status}`);
@@ -21,14 +22,14 @@ async function extractMetadata(url: string): Promise<{
     const domain = new URL(url).hostname;
     const faviconResponse = await fetch(`${baseUrl}/api/favicon?domain=${encodeURIComponent(domain)}`);
     const faviconData = await faviconResponse.json();
-    console.log('Favicon Data from API:', faviconData); // Added log
+    console.log('Favicon Data from API:', faviconData); 
 
     if (faviconResponse.status !== 200 || faviconData.error) {
       console.error('Error fetching favicon from API:', faviconData.error || `Status: ${faviconResponse.status}`);
     }
 
     let image = ogData.image;
-    // Handle relative image URLs if ogData.image is not absolute
+   
     if (image && !image.startsWith('http')) {
       const baseUrl = new URL(url);
       image = new URL(image, baseUrl.origin).toString();
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 })
     }
 
-    // Validate and normalize URL
+   
     let normalizedUrl: string;
     try {
       let urlToParse = url.trim();
@@ -96,12 +97,12 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       console.error('Error checking existing URL:', error);
-      // Continue with creating new short code
+ 
     }
 
     const metadata = await extractMetadata(normalizedUrl);
     
-    // Create short code
+ 
     const shortCode = await createShortCode(normalizedUrl, metadata);
     
     return NextResponse.json({ 
