@@ -10,46 +10,199 @@ export async function GET(req: Request) {
   }
 
   try {
-    const res = await fetch(targetUrl);
+    // Validate and normalize the URL
+    let normalizedUrl: string;
+    try {
+      const urlObj = new URL(targetUrl);
+      normalizedUrl = urlObj.href;
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+    const res = await fetch(normalizedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: `Failed to fetch website: ${res.status} ${res.statusText}` },
+        { status: res.status }
+      );
+    }
+
     const html = await res.text();
     const $ = cheerio.load(html);
 
-    const title = $('meta[property="og:title"]').attr('content') || $('title').text();
-    const description = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content');
-    const image = $('meta[property="og:image"]').attr('content') || $('meta[name="twitter:image"]').attr('content') || $('meta[name="twitter:image:src"]').attr('content');
+    // Remove any script and style tags to clean up the HTML
+    $('script, style, noscript, iframe').remove();
 
-    // More robust favicon extraction logic
-    let favicon = $('link[rel="apple-touch-icon"]').attr('href') ||
-                  $('link[rel="apple-touch-icon-precomposed"]').attr('href') ||
-                  $('link[rel*="icon"][sizes="192x192"]').attr('href') || 
-                  $('link[rel*="icon"][sizes="180x180"]').attr('href') || 
-                  $('link[rel*="icon"][sizes="32x32"]').attr('href') ||
-                  $('link[rel*="icon"][sizes="16x16"]').attr('href') ||
-                  $('link[rel="icon"][type="image/png"]').attr('href') ||
-                  $('link[rel="icon"][type="image/svg+xml"]').attr('href') ||
-                  $('link[rel="icon"]').attr('href') ||
-                  $('link[rel="shortcut icon"]').attr('href') ||
-                  $('link[type="image/x-icon"]').attr('href') ||
-                  $('meta[itemprop="image"]').attr('content') || // Fallback for some sites
-                  $('meta[property="og:image"]').attr('content') || // Use OG image as last resort if no favicon
-                  undefined; // Explicitly undefined if no favicon is found
-    if (favicon && !favicon.startsWith('http')) {
+    const title = $('meta[property="og:title"]').attr('content') || 
+                  $('meta[name="twitter:title"]').attr('content') || 
+                  $('title').text().trim() ||
+                  $('h1').first().text().trim();
+
+    const description = $('meta[property="og:description"]').attr('content') || 
+                        $('meta[name="twitter:description"]').attr('content') || 
+                        $('meta[name="description"]').attr('content') ||
+                        $('p').first().text().trim().substring(0, 200);
+
+    const image = $('meta[property="og:image"]').attr('content') || 
+                  $('meta[name="twitter:image"]').attr('content') || 
+                  $('meta[name="twitter:image:src"]').attr('content') ||
+                  $('meta[itemprop="image"]').attr('content');
+
+    // Enhanced favicon extraction with priority sorting
+    const faviconCandidates = [];
+
+    // High priority - apple touch icons (usually highest quality)
+    $('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]').each((_, el) => {
+      const href = $(el).attr('href');
+      const sizes = $(el).attr('sizes');
+      if (href) {
+        faviconCandidates.push({ href, priority: sizes === '180x180' ? 100 : 90, sizes });
+      }
+    });
+
+    // High priority - icons with larger sizes
+    $('link[rel*="icon"]').each((_, el) => {
+      const href = $(el).attr('href');
+      const sizes = $(el).attr('sizes');
+      let priority = 80;
+      
+      if (sizes) {
+        if (sizes.includes('192') || sizes.includes('180')) priority = 95;
+        else if (sizes.includes('32')) priority = 85;
+        else if (sizes.includes('16')) priority = 75;
+      }
+      
+      if (href && !href.includes('data:') && !href.startsWith('javascript:')) {
+        faviconCandidates.push({ href, priority, sizes });
+      }
+    });
+
+    // Medium priority - shortcut icon and other variants
+    $('link[rel="shortcut icon"], link[rel="icon shortcut"], link[type="image/x-icon"]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (href && !href.includes('data:') && !href.startsWith('javascript:')) {
+        faviconCandidates.push({ href, priority: 70, sizes: null });
+      }
+    });
+
+    // Sort candidates by priority (highest first)
+    faviconCandidates.sort((a, b) => b.priority - a.priority);
+
+    let favicon = faviconCandidates[0]?.href;
+
+    // Resolve relative URLs
+    const resolveUrl = (url: string, baseUrl: string): string => {
+      if (!url) return '';
+
+      // Handle data URLs and absolute URLs
+      if (url.startsWith('data:') || url.startsWith('javascript:')) {
+        return '';
+      }
+      
+      if (url.startsWith('//')) {
+        const urlObj = new URL(baseUrl);
+        return `${urlObj.protocol}${url}`;
+      }
+      
+      if (url.startsWith('http')) {
+        return url;
+      }
+      
+      if (url.startsWith('/')) {
+        const urlObj = new URL(baseUrl);
+        return `${urlObj.origin}${url}`;
+      }
+      
+      // Handle relative paths
       try {
-        favicon = new URL(favicon, targetUrl).href;
+        return new URL(url, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).href;
       } catch (e) {
-        favicon = undefined; 
+        return '';
+      }
+    };
+
+    if (favicon) {
+      favicon = resolveUrl(favicon, normalizedUrl);
+    }
+
+    // Fallback to common favicon locations if no favicon found in meta tags
+    if (!favicon) {
+      const urlObj = new URL(normalizedUrl);
+      const commonFaviconPaths = [
+        '/favicon.ico',
+        '/favicon.png',
+        '/favicon.jpg',
+        '/favicon.jpeg',
+        '/favicon.svg',
+        '/favicon.ico?', // Some sites use query parameters
+        '/apple-touch-icon.png',
+        '/apple-touch-icon-precomposed.png'
+      ];
+
+      for (const path of commonFaviconPaths) {
+        try {
+          const testUrl = new URL(path, normalizedUrl).href;
+          // You could add a HEAD request here to verify the favicon exists
+          favicon = testUrl;
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    // Final fallback - use domain root favicon.ico
+    if (!favicon) {
+      try {
+        const urlObj = new URL(normalizedUrl);
+        favicon = `${urlObj.origin}/favicon.ico`;
+      } catch (e) {
+        // If all else fails, no favicon
       }
     }
 
     return NextResponse.json({
-      title,
-      description,
-      image,
-      favicon
+      success: true,
+      data: {
+        title: title || null,
+        description: description || null,
+        image: image ? resolveUrl(image, normalizedUrl) : null,
+        favicon: favicon || null,
+        url: normalizedUrl
+      }
     });
-  } catch (error) {
-  console.error('Error fetching Open Graph metadata:', error)
-  return new Response('Error fetching Open Graph metadata', { status: 500 })
-}
 
+  } catch (error: any) {
+    console.error('Error fetching Open Graph metadata:', error);
+    
+    if (error.name === 'AbortError') {
+      return NextResponse.json(
+        { error: 'Request timeout - website took too long to respond' },
+        { status: 408 }
+      );
+    }
+    
+    return NextResponse.json(
+      { 
+        error: 'Error fetching Open Graph metadata',
+        details: error.message 
+      },
+      { status: 500 }
+    );
+  }
 }
