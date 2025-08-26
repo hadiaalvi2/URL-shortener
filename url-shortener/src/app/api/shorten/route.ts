@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     
     const metadata = await extractMetadata(normalizedUrl);
     
-   
+    // Create short code
     const shortCode = await createShortCode(normalizedUrl, metadata);
     
     return NextResponse.json({ 
