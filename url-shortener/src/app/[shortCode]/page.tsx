@@ -34,8 +34,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         : new URL(data.image, metadataBase).toString()
       : new URL("/og-default.png", metadataBase).toString()
 
-    console.log(`[generateMetadata] Image URL: ${imageUrl}`)
-    console.log(`[generateMetadata] Favicon URL: ${data.favicon}`)
 
     return {
       metadataBase,
@@ -106,8 +104,6 @@ export default async function RedirectPage(props: Props) {
       const description = data.description || "Check out this shared link"
       const imageUrl = data.image || "/og-default.png"
 
-      console.log(`[RedirectPage - Bot] Image URL: ${imageUrl}`)
-      console.log(`[RedirectPage - Bot] Favicon URL: ${data.favicon}`)
 
       return (
         <html>
