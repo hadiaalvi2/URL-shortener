@@ -1,4 +1,5 @@
 import { kv } from "@vercel/kv"
+import { fetchPageMetadata } from "@/lib/utils"
 
 export interface UrlData {
   originalUrl: string
@@ -104,7 +105,15 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     description: metadata?.description,
     image: metadata?.image,
     favicon: metadata?.favicon,
-  };
+  }
+  
+  if (!metadata) {
+    const scrapedMetadata = await fetchPageMetadata(url)
+    urlData.title = scrapedMetadata.title || urlData.title
+    urlData.description = scrapedMetadata.description || urlData.description
+    urlData.image = scrapedMetadata.image || urlData.image
+    urlData.favicon = scrapedMetadata.favicon || urlData.favicon
+  }
 
   await saveUrlToKV(shortCode, urlData);
   await kv.set(`url_to_code:${normalizedUrl}`, shortCode); // Store reverse mapping for efficient lookup
