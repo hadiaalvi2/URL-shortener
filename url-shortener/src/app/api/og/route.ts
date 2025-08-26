@@ -16,8 +16,8 @@ export async function GET(req: Request) {
 
     const title = $('meta[property="og:title"]').attr('content') || $('title').text();
     const description = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content');
-    const image = $('meta[property="og:image"]').attr('content');
-    const favicon = $('link[rel="icon"]').attr('href') || '/favicon.ico';
+    const image = $('meta[property="og:image"]').attr('content') || $('meta[name="twitter:image"]').attr('content') || $('meta[name="twitter:image:src"]').attr('content');
+    const favicon = $('link[rel="icon"]').attr('href') || $('link[rel="shortcut icon"]').attr('href') || $('link[rel="apple-touch-icon"]').attr('href') || '/favicon.ico';
 
     return NextResponse.json({
       title,
