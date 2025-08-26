@@ -155,15 +155,15 @@ export function createShortCode(url: string, metadata?: Partial<UrlData>): strin
   return shortCode;
 }
 
-export function getAllUrls(): { shortCode: string; originalUrl: string }[] {
+export function getAllUrls(): Record<string, string> {
   const storage = readStorage();
+  const result: Record<string, string> = {};
   
-  if (!storage.codeToUrl) {
-    return [];
+  if (storage.codeToUrl) {
+    Object.entries(storage.codeToUrl).forEach(([shortCode, data]) => {
+      result[shortCode] = data.originalUrl;
+    });
   }
   
-  return Object.entries(storage.codeToUrl).map(([shortCode, data]) => ({
-    shortCode,
-    originalUrl: data.originalUrl,
-  }));
+  return result;
 }
