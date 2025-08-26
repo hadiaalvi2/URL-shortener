@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createShortCode, getUrl, getAllUrls } from "@/lib/url-store"
 
+const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
+
 async function extractMetadata(url: string): Promise<{
   title?: string;
   description?: string;
@@ -8,7 +10,7 @@ async function extractMetadata(url: string): Promise<{
   favicon?: string;
 }> {
   try {
-    const ogResponse = await fetch(`/api/og?url=${encodeURIComponent(url)}`);
+    const ogResponse = await fetch(`${baseUrl}/api/og?url=${encodeURIComponent(url)}`);
     const ogData = await ogResponse.json();
     console.log('OG Data from API:', ogData); // Added log
 
@@ -17,7 +19,7 @@ async function extractMetadata(url: string): Promise<{
     }
 
     const domain = new URL(url).hostname;
-    const faviconResponse = await fetch(`/api/favicon?domain=${encodeURIComponent(domain)}`);
+    const faviconResponse = await fetch(`${baseUrl}/api/favicon?domain=${encodeURIComponent(domain)}`);
     const faviconData = await faviconResponse.json();
     console.log('Favicon Data from API:', faviconData); // Added log
 
