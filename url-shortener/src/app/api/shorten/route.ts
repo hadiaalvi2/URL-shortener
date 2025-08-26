@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createShortCode, getUrl, getAllUrls } from "@/lib/url-store"
+import { kv } from "@vercel/kv";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
 
@@ -99,13 +100,11 @@ export async function POST(request: NextRequest) {
 
 
     try {
-      const existingShortCode = Object.entries(await getAllUrls()).find(
-        ([_, storedUrl]) => storedUrl === normalizedUrl
-      )?.[0];
+      const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`)
       
       if (existingShortCode) {
         const existingData = await getUrl(existingShortCode);
-        return NextResponse.json({ 
+        return NextResponse.json({
           shortCode: existingShortCode,
           metadata: existingData
         });

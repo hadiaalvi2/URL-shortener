@@ -8,7 +8,11 @@ export function cn(...inputs: ClassValue[]) {
 
 export async function fetchPageMetadata(url: string) {
   try {
-    const response = await fetch(url)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+    const response = await fetch(url, { signal: controller.signal })
+    clearTimeout(timeoutId)
     const html = await response.text()
     const $ = cheerio.load(html)
 
@@ -26,7 +30,6 @@ export async function fetchPageMetadata(url: string) {
           favicon = new URL(favicon, baseUrl).toString()
         }
       } catch (e) {
-        console.error("Error constructing favicon URL:", e)
         favicon = undefined
       }
     }
