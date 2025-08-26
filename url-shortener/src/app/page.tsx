@@ -11,7 +11,7 @@ export const metadata = {
     images: ["/og-default.png"],
   },
   twitter: {
-    card: "summary_large_image",
+    card: "summary_large_image", 
     title: "URL Shortener",
     description: "Shorten your links and generate rich previews for social sharing.",
     images: ["/og-default.png"],
@@ -124,27 +124,6 @@ export default function HomePage() {
             </svg>
           </Link>
         </Button>
-
-        {/* Example preview (dynamic) */}
-        <div className="pt-8 border-t border-gray-200/50 mt-8">
-          <p className="text-sm text-gray-500 mb-3">Example of shared links:</p>
-          <div className="bg-white/80 backdrop-blur-sm p-4 rounded-lg border border-gray-200/50 text-left max-w-md mx-auto hover:shadow-md transition-all duration-300">
-            <div className="flex items-start space-x-3">
-              <div className="w-6 h-6 bg-gray-200 rounded flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-xs text-gray-500">🌐</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900 truncate">
-                  Example from your shortener
-                </p>
-                <p className="text-sm text-gray-600 truncate">
-                  Shortened link preview with OG tags
-                </p>
-                <p className="text-xs text-blue-600 truncate">{exampleShortUrl}</p>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

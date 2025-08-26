@@ -25,8 +25,8 @@ async function extractMetadata(url: string): Promise<{
       console.error('Error fetching favicon from API:', faviconData.error || `Status: ${faviconResponse.status}`);
     }
 
-    let image = ogData.image; // Use ogData.image directly
-    // Handle relative image URLs if ogData.image is not absolute
+    let image = ogData.image; 
+
     if (image && !image.startsWith('http')) {
       const imageUrlBase = new URL(url);
       image = new URL(image, imageUrlBase.origin).toString();

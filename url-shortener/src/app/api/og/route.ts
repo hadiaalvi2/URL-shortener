@@ -18,8 +18,12 @@ export async function GET(req: Request) {
     const description = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content');
     const image = $('meta[property="og:image"]').attr('content') || $('meta[name="twitter:image"]').attr('content') || $('meta[name="twitter:image:src"]').attr('content');
 
-    // More robust favicon extraction
+    // More robust favicon extraction logic
     let favicon = $('link[rel="apple-touch-icon"]').attr('href') ||
+                  $('link[rel*="icon"][sizes="192x192"]').attr('href') || 
+                  $('link[rel*="icon"][sizes="180x180"]').attr('href') || 
+                  $('link[rel*="icon"][sizes="32x32"]').attr('href') ||
+                  $('link[rel*="icon"][sizes="16x16"]').attr('href') ||
                   $('link[rel="icon"][type="image/png"]').attr('href') ||
                   $('link[rel="icon"][type="image/svg+xml"]').attr('href') ||
                   $('link[rel="icon"]').attr('href') ||
@@ -29,7 +33,12 @@ export async function GET(req: Request) {
 
     // Ensure favicon is an absolute URL
     if (favicon && !favicon.startsWith('http')) {
-      favicon = new URL(favicon, targetUrl).href;
+      try {
+        favicon = new URL(favicon, targetUrl).href;
+      } catch (e) {
+        console.error("Error resolving relative favicon URL:", favicon, e);
+        favicon = new URL('/favicon.ico', new URL(targetUrl).origin).href; 
+      }
     }
 
     return NextResponse.json({
