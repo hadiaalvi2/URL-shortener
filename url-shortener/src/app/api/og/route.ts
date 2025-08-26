@@ -5,6 +5,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const targetUrl = searchParams.get('url');
 
+  console.log(`[OG API] Received request for URL: ${targetUrl}`);
+
   if (!targetUrl) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
   }
@@ -14,6 +16,7 @@ export async function GET(req: Request) {
   try {
     parsedUrl = new URL(targetUrl);
   } catch {
+    console.error(`[OG API] Invalid URL provided: ${targetUrl}`);
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
   }
 
@@ -35,11 +38,14 @@ export async function GET(req: Request) {
 
     clearTimeout(timeoutId);
 
+    console.log(`[OG API] Fetch response status for ${targetUrl}: ${res.status}`);
+
     if (!res.ok) {
       return NextResponse.json({ error: `Failed to fetch URL: ${res.status}` }, { status: res.status });
     }
 
     const html = await res.text();
+    console.log(`[OG API] Fetched HTML length for ${targetUrl}: ${html.length}`);
     const $ = cheerio.load(html);
 
     const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
@@ -58,6 +64,11 @@ export async function GET(req: Request) {
 
     // Enhanced favicon extraction from original website
     const favicon = await extractFavicon($, parsedUrl);
+
+    console.log(`[OG API] Extracted title: ${title}`);
+    console.log(`[OG API] Extracted description: ${description}`);
+    console.log(`[OG API] Extracted image: ${image}`);
+    console.log(`[OG API] Extracted favicon: ${favicon}`);
 
     return NextResponse.json({
       success: true,
@@ -84,6 +95,7 @@ export async function GET(req: Request) {
 }
 
 async function extractFavicon($: cheerio.CheerioAPI, baseUrl: URL): Promise<string> {
+  console.log(`[Favicon Extraction] Starting favicon extraction for base URL: ${baseUrl.toString()}`);
   // Try various favicon patterns in order of preference
   const faviconSelectors = [
     'link[rel="apple-touch-icon-precomposed"]',
@@ -126,11 +138,14 @@ async function extractFavicon($: cheerio.CheerioAPI, baseUrl: URL): Promise<stri
     });
   }
 
+  console.log(`[Favicon Extraction] Found ${faviconCandidates.length} favicon candidates.`);
+
   // Sort by size (largest first)
   faviconCandidates.sort((a, b) => b.size - a.size);
 
   // Try each candidate to see if it exists and is accessible
   for (const candidate of faviconCandidates) {
+    console.log(`[Favicon Extraction] Checking candidate: ${candidate.href} (size: ${candidate.size})`);
     try {
       const faviconRes = await fetch(candidate.href, {
         headers: {
@@ -140,16 +155,18 @@ async function extractFavicon($: cheerio.CheerioAPI, baseUrl: URL): Promise<stri
       });
 
       if (faviconRes.ok && faviconRes.headers.get('content-type')?.includes('image')) {
+        console.log(`[Favicon Extraction] Found accessible favicon: ${candidate.href}`);
         return candidate.href;
       }
     } catch (_error) {
       // Continue to next candidate if this one fails
-      console.log(`Favicon candidate failed: ${candidate.href}`);
+      console.log(`[Favicon Extraction] Favicon candidate failed: ${candidate.href} - Error: ${_error}`);
     }
   }
 
   // Try the default favicon.ico
   const defaultFavicon = resolveUrl('/favicon.ico', baseUrl);
+  console.log(`[Favicon Extraction] Checking default /favicon.ico: ${defaultFavicon}`);
   try {
     const defaultRes = await fetch(defaultFavicon, {
       headers: {
@@ -159,17 +176,20 @@ async function extractFavicon($: cheerio.CheerioAPI, baseUrl: URL): Promise<stri
     });
 
     if (defaultRes.ok && defaultRes.headers.get('content-type')?.includes('image')) {
+      console.log(`[Favicon Extraction] Found accessible default favicon: ${defaultFavicon}`);
       return defaultFavicon;
     }
   } catch (_error) {
-    console.log(`Default favicon failed: ${defaultFavicon}`);
+    console.log(`[Favicon Extraction] Default favicon failed: ${defaultFavicon} - Error: ${_error}`);
   }
 
   // If all else fails, return the largest candidate URL even if we couldn't verify it
   if (faviconCandidates.length > 0) {
+    console.log(`[Favicon Extraction] Returning largest unverified candidate: ${faviconCandidates[0].href}`);
     return faviconCandidates[0].href;
   }
 
+  console.log(`[Favicon Extraction] No favicon found, returning default: ${defaultFavicon}`);
   return defaultFavicon;
 }
 
