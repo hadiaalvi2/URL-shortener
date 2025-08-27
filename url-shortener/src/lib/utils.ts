@@ -101,34 +101,47 @@ export async function fetchPageMetadata(url: string) {
       }
       image = candidates.find(Boolean);
 
-      // Attempt to extract metadata from JSON-LD
+      // Attempt to extract metadata from JSON-LD (handles arrays and @graph)
+      const pickImageFromLd = (img: any): string | undefined => {
+        if (!img) return undefined;
+        if (typeof img === 'string') return img;
+        if (Array.isArray(img)) {
+          for (const it of img) {
+            const got = pickImageFromLd(it);
+            if (got) return got;
+          }
+          return undefined;
+        }
+        if (typeof img === 'object') {
+          return img.url || img.contentUrl || img.secure_url || img.secureUrl || undefined;
+        }
+        return undefined;
+      };
+
+      const considerLdNode = (node: any) => {
+        if (!node || typeof node !== 'object') return;
+        const type = node['@type'];
+        if (type === 'WebPage' || type === 'Product' || type === 'Article' || type === 'NewsArticle') {
+          if (!title) title = node.name || node.headline || node.alternativeHeadline || node.url;
+          if (!description) description = node.description;
+          if (!image) image = pickImageFromLd(node.image);
+        }
+      };
+
       $('script[type="application/ld+json"]').each((_idx, el) => {
         try {
-          const ldJson = JSON.parse($(el).text());
-          console.log('[fetchPageMetadata] Found JSON-LD:', ldJson);
-          
-          // Prioritize JSON-LD if it contains better data
-          if (ldJson['@type'] === 'WebPage' || ldJson['@type'] === 'Product' || ldJson['@type'] === 'Article') {
-            title = title || ldJson.name || ldJson.headline || ldJson.url;
-            description = description || ldJson.description;
-            
-            if (ldJson.image) {
-              // JSON-LD image can be a string or an object with a 'url' property
-              const ldImage = typeof ldJson.image === 'string' ? ldJson.image : ldJson.image.url;
-              image = image || ldImage;
+          const text = $(el).text();
+          if (!text) return;
+          const ldJson = JSON.parse(text);
+          console.log('[fetchPageMetadata] Found JSON-LD');
+
+          if (Array.isArray(ldJson)) {
+            for (const item of ldJson) considerLdNode(item);
+          } else if (ldJson && typeof ldJson === 'object') {
+            if (Array.isArray(ldJson['@graph'])) {
+              for (const item of ldJson['@graph']) considerLdNode(item);
             }
-          } else if (Array.isArray(ldJson)) {
-              // Handle cases where JSON-LD is an array of objects
-              for (const item of ldJson) {
-                  if (item['@type'] === 'WebPage' || item['@type'] === 'Product' || item['@type'] === 'Article') {
-                      title = title || item.name || item.headline || item.url;
-                      description = description || item.description;
-                      if (item.image) {
-                          const ldImage = typeof item.image === 'string' ? item.image : item.image.url;
-                          image = image || ldImage;
-                      }
-                  }
-              }
+            considerLdNode(ldJson);
           }
         } catch (e) {
           console.error('[fetchPageMetadata] Error parsing JSON-LD:', e);
