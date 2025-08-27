@@ -29,7 +29,13 @@ export async function saveUrlToKV(shortCode: string, data: UrlData) {
 export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   if (!data) return true;
   const genericTitle = data.title?.toLowerCase().startsWith("page from ") ?? false;
-  const genericDescription = data.description === "Check out this shared link";
+  const genericDescription = (() => {
+    const d = (data.description || '').toLowerCase();
+    if (!d) return true;
+    if (d === (data.title || '').toLowerCase()) return true;
+    if (d.includes('enjoy the videos and music you love')) return true; // YouTube generic
+    return false;
+  })();
   const googleFavicon = data.favicon?.includes("google.com/s2/favicons") ?? false;
   const missingCore = !data.title && !data.description && !data.image;
   return genericTitle || genericDescription || googleFavicon || missingCore;

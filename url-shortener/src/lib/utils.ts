@@ -51,6 +51,21 @@ export async function fetchPageMetadata(url: string) {
     let favicon: string | undefined;
 
     try {
+      const isGenericDescription = (desc?: string, ttl?: string): boolean => {
+        if (!desc) return true;
+        const d = desc.trim();
+        if (ttl && d === ttl.trim()) return true;
+        if (d.length < 20) return true;
+        const generics = [
+          'enjoy the videos and music you love', // YouTube generic
+          'page not found',
+          'sign in',
+          'access denied',
+          'just a moment',
+        ];
+        const lower = d.toLowerCase();
+        return generics.some(g => lower.includes(g));
+      };
       const $ = cheerio.load(html);
       console.log(`[fetchPageMetadata] Cheerio loaded HTML for ${url}.`);
 
@@ -79,6 +94,11 @@ export async function fetchPageMetadata(url: string) {
           "meta[name='twitter:description']",
           "meta[itemprop='description']",
         ]);
+
+      // If description looks generic, prefer to re-derive it via fallbacks
+      if (isGenericDescription(description, title)) {
+        description = undefined;
+      }
 
       const candidateImageSelectors = [
         "meta[property='og:image']",
@@ -217,8 +237,17 @@ export async function fetchPageMetadata(url: string) {
       favicon = undefined;
     }
 
-    // If critical data is missing or the first fetch failed, try a fallback via Jina reader
-    if ((!title && !description && !image) || !response.ok || !html) {
+    // If critical data is missing, generic, or the first fetch failed, try a fallback via Jina reader
+    const looksGeneric = (() => {
+      const d = (description || '').toString();
+      const t = (title || '').toString();
+      if (!d) return true;
+      if (t && d.trim() === t.trim()) return true;
+      const lower = d.toLowerCase();
+      return lower.includes('enjoy the videos and music you love');
+    })();
+
+    if ((!title && !description && !image) || looksGeneric || !response.ok || !html) {
       try {
         const u = new URL(url);
         const proto = u.protocol.replace(':',''); // 'http' or 'https'
