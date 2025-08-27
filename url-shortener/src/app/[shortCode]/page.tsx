@@ -75,14 +75,15 @@ export default async function RedirectPage(props: Props) {
 
     const headersList = await headers()
     const userAgent = headersList.get("user-agent") || ""
+    const ua = userAgent.toLowerCase()
     const isSocialMediaBot =
-      userAgent.includes("facebookexternalhit") ||
-      userAgent.includes("Twitterbot") ||
-      userAgent.includes("LinkedInBot") ||
-      userAgent.includes("WhatsApp") ||
-      userAgent.includes("TelegramBot") ||
-      userAgent.includes("Discordbot") ||
-      userAgent.includes("Slackbot")
+      ua.includes("facebookexternalhit") ||
+      ua.includes("twitterbot") ||
+      ua.includes("linkedinbot") ||
+      ua.includes("whatsapp") ||
+      ua.includes("telegrambot") ||
+      ua.includes("discordbot") ||
+      ua.includes("slackbot")
 
     if (!data) {
       return (
