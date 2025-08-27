@@ -16,6 +16,8 @@ export async function fetchPageMetadata(url: string) {
     
     const response = await fetch(url, {
       signal: controller.signal,
+      redirect: "follow",
+      cache: "no-store",
       headers: {
         // Some sites block requests without a user agent
         "User-Agent":
@@ -37,15 +39,9 @@ export async function fetchPageMetadata(url: string) {
     if (!response.ok) {
       const errorHtml = await response.text();
       console.error(`[fetchPageMetadata] Failed to fetch ${url}: ${response.status} ${response.statusText}. HTML response: ${errorHtml.substring(0, 500)}`);
-      return {
-        title: undefined,
-        description: undefined,
-        image: undefined,
-        favicon: undefined,
-      };
     }
 
-    const html = await response.text();
+    const html = response.ok ? await response.text() : "";
     console.log(`[fetchPageMetadata] Fetched HTML for ${url}:`, html.substring(0, 500)); // Log first 500 characters of HTML
     
     let title: string | undefined;
@@ -153,6 +149,41 @@ export async function fetchPageMetadata(url: string) {
       image = undefined;
       favicon = undefined;
     }
+
+    // If critical data is missing or the first fetch failed, try a fallback via Jina reader
+    if ((!title && !description && !image) || !response.ok || !html) {
+      try {
+        const jinaUrl = `https://r.jina.ai/http://${new URL(url).host}${new URL(url).pathname}${new URL(url).search}`;
+        console.log(`[fetchPageMetadata] Attempting fallback fetch via Jina reader: ${jinaUrl}`);
+        const fallbackRes = await fetch(jinaUrl, { cache: "no-store" });
+        if (fallbackRes.ok) {
+          const fallbackHtml = await fallbackRes.text();
+          const $fb = cheerio.load(fallbackHtml);
+          const fbTitle = $fb("head title").text().trim() || $fb("meta[property='og:title']").attr("content");
+          const fbDesc =
+            $fb("meta[name='description']").attr("content") ||
+            $fb("meta[property='og:description']").attr("content");
+          const fbImg =
+            $fb("meta[property='og:image']").attr("content") ||
+            $fb("img").first().attr("src");
+          title = title || fbTitle;
+          description = description || fbDesc;
+          image = image || fbImg;
+        } else {
+          console.warn(`[fetchPageMetadata] Jina fallback failed: ${fallbackRes.status} ${fallbackRes.statusText}`);
+        }
+      } catch (fallbackError) {
+        console.warn('[fetchPageMetadata] Error during fallback extraction:', fallbackError);
+      }
+    }
+
+    // Final pass: provide a sensible favicon fallback via Google S2 service
+    try {
+      const baseForFavicon = new URL(url);
+      if (!favicon) {
+        favicon = `https://www.google.com/s2/favicons?domain=${baseForFavicon.hostname}&sz=128`;
+      }
+    } catch {}
 
     const metadata = {
       title: title || undefined,
