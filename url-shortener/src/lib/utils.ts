@@ -186,7 +186,9 @@ export async function fetchPageMetadata(url: string) {
     // If critical data is missing or the first fetch failed, try a fallback via Jina reader
     if ((!title && !description && !image) || !response.ok || !html) {
       try {
-        const jinaUrl = `https://r.jina.ai/http://${new URL(url).host}${new URL(url).pathname}${new URL(url).search}`;
+        const u = new URL(url);
+        const proto = u.protocol.replace(':',''); // 'http' or 'https'
+        const jinaUrl = `https://r.jina.ai/${proto}://${u.host}${u.pathname}${u.search}`;
         console.log(`[fetchPageMetadata] Attempting fallback fetch via Jina reader: ${jinaUrl}`);
         const fallbackRes = await fetch(jinaUrl, { cache: "no-store" });
         if (fallbackRes.ok) {
