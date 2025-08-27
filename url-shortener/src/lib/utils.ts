@@ -156,6 +156,25 @@ export async function fetchPageMetadata(url: string) {
         $("link[rel='shortcut icon']").attr("href") ||
         $("link[rel='apple-touch-icon']").attr("href") ||
         $("link[rel='apple-touch-icon-precomposed']").attr("href");
+      // YouTube specific: extract real video description from inline JSON
+      try {
+        const isYouTube = /(^|\.)youtube\.com$/.test(new URL(effectiveUrl).hostname) || new URL(effectiveUrl).hostname === "youtu.be";
+        if (isYouTube) {
+          if (!description) {
+            const match = html.match(/\"shortDescription\":\"([\s\S]*?)\"/);
+            if (match && match[1]) {
+              const unescaped = match[1]
+                .replace(/\\n/g, "\n")
+                .replace(/\\"/g, '"')
+                .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
+                .trim();
+              if (unescaped) {
+                description = unescaped;
+              }
+            }
+          }
+        }
+      } catch {}
     } catch (e) {
         console.error('[fetchPageMetadata] Error loading HTML with Cheerio or parsing meta tags:', e);
     }
