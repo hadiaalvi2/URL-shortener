@@ -102,8 +102,8 @@ export async function fetchPageMetadata(url: string) {
       image = candidates.find(Boolean);
 
       // Attempt to extract metadata from JSON-LD (handles arrays and @graph)
-      const pickImageFromLd = (img: any): string | undefined => {
-        if (!img) return undefined;
+      const pickImageFromLd = (img: unknown): string | undefined => {
+        if (img == null) return undefined;
         if (typeof img === 'string') return img;
         if (Array.isArray(img)) {
           for (const it of img) {
@@ -113,18 +113,20 @@ export async function fetchPageMetadata(url: string) {
           return undefined;
         }
         if (typeof img === 'object') {
-          return img.url || img.contentUrl || img.secure_url || img.secureUrl || undefined;
+          const obj = img as { url?: string; contentUrl?: string; secure_url?: string; secureUrl?: string };
+          return obj.url || obj.contentUrl || obj.secure_url || obj.secureUrl || undefined;
         }
         return undefined;
       };
 
-      const considerLdNode = (node: any) => {
+      const considerLdNode = (node: unknown) => {
         if (!node || typeof node !== 'object') return;
-        const type = node['@type'];
+        const obj = node as Record<string, unknown>;
+        const type = obj['@type'] as string | undefined;
         if (type === 'WebPage' || type === 'Product' || type === 'Article' || type === 'NewsArticle') {
-          if (!title) title = node.name || node.headline || node.alternativeHeadline || node.url;
-          if (!description) description = node.description;
-          if (!image) image = pickImageFromLd(node.image);
+          if (!title) title = (obj.name as string) || (obj.headline as string) || (obj.alternativeHeadline as string) || (obj.url as string);
+          if (!description) description = obj.description as string | undefined;
+          if (!image) image = pickImageFromLd(obj.image);
         }
       };
 
