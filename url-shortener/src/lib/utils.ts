@@ -46,20 +46,54 @@ export async function fetchPageMetadata(url: string) {
     console.log(`Fetched HTML for ${url}:`, html.substring(0, 500)); // Log first 500 characters of HTML
     const $ = cheerio.load(html);
 
-    const title = $("head title").text().trim() || $("meta[property='og:title']").attr("content") || $("meta[name='twitter:title']").attr("content");
-    const description =
+    let title = $("head title").text().trim() || $("meta[property='og:title']").attr("content") || $("meta[name='twitter:title']").attr("content");
+    let description =
       $("meta[name='description']").attr("content") ||
       $("meta[property='og:description']").attr("content") ||
       $("meta[name='twitter:description']").attr("content") ||
       $("meta[itemprop='description']").attr("content");
     let image =
       $("meta[property='og:image']").attr("content") ||
-      $("meta[property='og:image:url']").attr("content") || // Added og:image:url
-      $("meta[property='og:image:secure_url']").attr("content") || // Added og:image:secure_url
+      $("meta[property='og:image:url']").attr("content") ||
+      $("meta[property='og:image:secure_url']").attr("content") ||
       $("meta[name='twitter:image']").attr("content") ||
       $("meta[name='twitter:image:src']").attr("content") ||
-      $("link[rel='image_src']").attr("href") || // Add image_src link tag
-      $("meta[itemprop='image']").attr("content"); // Add itemprop image
+      $("link[rel='image_src']").attr("href") ||
+      $("meta[itemprop='image']").attr("content");
+
+    // Attempt to extract metadata from JSON-LD
+    $('script[type="application/ld+json"]').each((_idx, el) => {
+      try {
+        const ldJson = JSON.parse($(el).text());
+        console.log('Found JSON-LD:', ldJson);
+        
+        // Prioritize JSON-LD if it contains better data
+        if (ldJson['@type'] === 'WebPage' || ldJson['@type'] === 'Product' || ldJson['@type'] === 'Article') {
+          title = title || ldJson.name || ldJson.headline || ldJson.url;
+          description = description || ldJson.description;
+          
+          if (ldJson.image) {
+            // JSON-LD image can be a string or an object with a 'url' property
+            const ldImage = typeof ldJson.image === 'string' ? ldJson.image : ldJson.image.url;
+            image = image || ldImage;
+          }
+        } else if (Array.isArray(ldJson)) {
+            // Handle cases where JSON-LD is an array of objects
+            for (const item of ldJson) {
+                if (item['@type'] === 'WebPage' || item['@type'] === 'Product' || item['@type'] === 'Article') {
+                    title = title || item.name || item.headline || item.url;
+                    description = description || item.description;
+                    if (item.image) {
+                        const ldImage = typeof item.image === 'string' ? item.image : item.image.url;
+                        image = image || ldImage;
+                    }
+                }
+            }
+        }
+      } catch (e) {
+        console.error("Error parsing JSON-LD:", e);
+      }
+    });
 
     // Try all common rel attributes for favicon
     let favicon =
