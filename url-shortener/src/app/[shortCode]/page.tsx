@@ -25,14 +25,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       }
     }
 
-    const title = data.title
-    const description = data.description
+    const original = data.originalUrl ? new URL(data.originalUrl) : null
+    const domainFallback = original ? original.hostname : undefined
+    const title = data.title || domainFallback
+    const description = data.description || data.title || data.originalUrl
     
+    const googleFavicon = original ? `https://www.google.com/s2/favicons?domain=${original.hostname}&sz=256` : undefined
     const imageUrl = data.image 
       ? data.image.startsWith('http') 
         ? data.image 
         : new URL(data.image, metadataBase).toString()
-      : undefined // Removed fallback to og-default.png
+      : (data.favicon || googleFavicon)
 
 
     return {
