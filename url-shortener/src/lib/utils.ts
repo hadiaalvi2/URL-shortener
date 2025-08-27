@@ -12,6 +12,7 @@ export async function fetchPageMetadata(url: string) {
     const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10 seconds
 
     console.log(`Fetching metadata for: ${url}`); // Debugging line
+    
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
@@ -62,10 +63,12 @@ export async function fetchPageMetadata(url: string) {
       $("meta[itemprop='image']").attr("content");
 
     // Attempt to extract metadata from JSON-LD
+    let jsonLd = null;
     $('script[type="application/ld+json"]').each((_idx, el) => {
       try {
         const ldJson = JSON.parse($(el).text());
-        console.log('Found JSON-LD:', ldJson);
+        jsonLd = ldJson;
+        if (jsonLd) console.log(`Found JSON-LD for ${url}:`, jsonLd);
         
         // Prioritize JSON-LD if it contains better data
         if (ldJson['@type'] === 'WebPage' || ldJson['@type'] === 'Product' || ldJson['@type'] === 'Article') {
