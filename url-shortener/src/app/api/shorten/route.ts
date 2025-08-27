@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createShortCode, getUrl, getAllUrls } from "@/lib/url-store"
 import { kv } from "@vercel/kv";
 import { fetchPageMetadata } from "@/lib/utils"; // Import fetchPageMetadata
+import { isWeakMetadata, updateUrlData } from "@/lib/url-store";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
 
@@ -39,6 +40,19 @@ export async function POST(request: NextRequest) {
       
       if (existingShortCode) {
         const existingData = await getUrl(existingShortCode);
+        // If existing metadata is weak, try to re-scrape and update
+        if (isWeakMetadata(existingData)) {
+          try {
+            const fresh = await fetchPageMetadata(normalizedUrl);
+            const improved = await updateUrlData(existingShortCode, fresh);
+            return NextResponse.json({
+              shortCode: existingShortCode,
+              metadata: improved ?? existingData
+            });
+          } catch (refreshError) {
+            console.error('Error refreshing metadata for existing URL:', refreshError);
+          }
+        }
         return NextResponse.json({
           shortCode: existingShortCode,
           metadata: existingData

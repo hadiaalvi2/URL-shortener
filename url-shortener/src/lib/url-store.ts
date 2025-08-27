@@ -26,6 +26,26 @@ export async function saveUrlToKV(shortCode: string, data: UrlData) {
   await kv.set(`url:${shortCode}`, data)
 }
 
+export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
+  if (!data) return true;
+  const genericTitle = data.title?.toLowerCase().startsWith("page from ") ?? false;
+  const genericDescription = data.description === "Check out this shared link";
+  const googleFavicon = data.favicon?.includes("google.com/s2/favicons") ?? false;
+  const missingCore = !data.title && !data.description && !data.image;
+  return genericTitle || genericDescription || googleFavicon || missingCore;
+}
+
+export async function updateUrlData(shortCode: string, partial: Partial<UrlData>): Promise<UrlData | null> {
+  const existing = await getUrlFromKV(shortCode);
+  if (!existing) return null;
+  const merged: UrlData = {
+    ...existing,
+    ...partial,
+  };
+  await saveUrlToKV(shortCode, merged);
+  return merged;
+}
+
 function normalizeUrl(url: string): string {
   try {
     let urlToNormalize = url;
