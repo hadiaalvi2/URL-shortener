@@ -10,7 +10,7 @@ const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
 
 export async function POST(request: NextRequest) {
   try {
-    const { url } = await request.json()
+    const { url, force } = await request.json()
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 })
@@ -40,9 +40,10 @@ export async function POST(request: NextRequest) {
       
       if (existingShortCode) {
         const existingData = await getUrl(existingShortCode);
-        // If existing metadata is weak, try to re-scrape and update
-        if (isWeakMetadata(existingData)) {
+        // If existing metadata is weak or user forces refresh, try to re-scrape and update
+        if (force || isWeakMetadata(existingData)) {
           try {
+            console.log(`[shorten] Refreshing metadata for existing URL: ${normalizedUrl}`);
             const fresh = await fetchPageMetadata(normalizedUrl);
             const improved = await updateUrlData(existingShortCode, fresh);
             return NextResponse.json({
