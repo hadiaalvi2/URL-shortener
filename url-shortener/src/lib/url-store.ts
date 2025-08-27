@@ -14,89 +14,91 @@ export interface UrlStorage {
   urlToCode: Record<string, string>
 }
 
-// Vercel KV functions
+// Vercel KV functions with better error handling
 export async function getUrlFromKV(shortCode: string): Promise<UrlData | null> {
-  console.log(`Attempting to get URL data for short code: ${shortCode}`);
-  const data = await kv.get<UrlData>(`url:${shortCode}`);
-  console.log(`Data for ${shortCode}:`, data);
-  return data;
+  try {
+    console.log(`Getting URL data for: ${shortCode}`);
+    const data = await kv.get<UrlData>(`url:${shortCode}`);
+    return data;
+  } catch (error) {
+    console.error(`Error getting URL from KV for ${shortCode}:`, error);
+    return null;
+  }
 }
 
-export async function saveUrlToKV(shortCode: string, data: UrlData) {
-  await kv.set(`url:${shortCode}`, data)
+export async function saveUrlToKV(shortCode: string, data: UrlData): Promise<void> {
+  try {
+    await kv.set(`url:${shortCode}`, data);
+    console.log(`Saved URL data for: ${shortCode}`);
+  } catch (error) {
+    console.error(`Error saving URL to KV for ${shortCode}:`, error);
+    throw error;
+  }
 }
 
-// Enhanced function to detect generic metadata
+// Simplified weak metadata detection
 export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   if (!data) return true;
   
-  const genericTitle = data.title?.toLowerCase().startsWith("page from ") ?? false;
-  const genericDescription = isGenericDescription(data.description);
-  const googleFavicon = data.favicon?.includes("google.com/s2/favicons") ?? false;
-  const missingCore = !data.title && !data.description && !data.image;
+  const hasWeakTitle = !data.title || 
+                      data.title.toLowerCase().startsWith("page from ") ||
+                      data.title.trim().length < 3;
   
-  return genericTitle || genericDescription || googleFavicon || missingCore;
-}
-
-// Function to detect and filter generic descriptions
-function isGenericDescription(desc?: string): boolean {
-  if (!desc) return true;
+  const hasWeakDescription = !data.description || 
+                            data.description.trim().length < 20;
   
-  const genericPatterns = [
-    /enjoy (the|this) (video|content)/i,
-    /watch (now|video|this)/i,
-    /check out (this|the|my)/i,
-    /click (here|now)/i,
-    /^video$/i,
-    /^page$/i,
-    /^website$/i,
-    /^view (more|content)$/i,
-    /^see (more|details)$/i,
-    /shared (link|content)/i,
-    /default (description|title)/i,
-    /^[\W\s]*$/, // Only special characters or whitespace
-  ];
-  
-  const isTooShort = desc.trim().length < 25;
-  const isGeneric = genericPatterns.some(pattern => pattern.test(desc.trim()));
-  
-  return isTooShort || isGeneric;
+  return hasWeakTitle && hasWeakDescription;
 }
 
 export async function updateUrlData(shortCode: string, partial: Partial<UrlData>): Promise<UrlData | null> {
-  const existing = await getUrlFromKV(shortCode);
-  if (!existing) return null;
-  const merged: UrlData = {
-    ...existing,
-    ...partial,
-  };
-  await saveUrlToKV(shortCode, merged);
-  return merged;
+  try {
+    const existing = await getUrlFromKV(shortCode);
+    if (!existing) return null;
+    
+    const merged: UrlData = { ...existing, ...partial };
+    await saveUrlToKV(shortCode, merged);
+    return merged;
+  } catch (error) {
+    console.error(`Error updating URL data for ${shortCode}:`, error);
+    return null;
+  }
 }
 
+// Simplified URL normalization
 function normalizeUrl(url: string): string {
   try {
-    let urlToNormalize = url;
+    let normalizedUrl = url.trim();
     
-    if (!urlToNormalize.startsWith('http://') && !urlToNormalize.startsWith('https://')) {
-      urlToNormalize = 'https://' + urlToNormalize;
+    // Add protocol if missing
+    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+      normalizedUrl = 'https://' + normalizedUrl;
     }
     
-    const urlObj = new URL(urlToNormalize);
+    const urlObj = new URL(normalizedUrl);
     
-    let normalized = urlObj.toString();
-    
-    if (normalized.endsWith('/')) {
-      normalized = normalized.slice(0, -1);
+    // Remove trailing slash
+    let result = urlObj.toString();
+    if (result.endsWith('/') && urlObj.pathname === '/') {
+      result = result.slice(0, -1);
     }
     
-    const hostname = urlObj.hostname.toLowerCase();
-    normalized = normalized.replace(urlObj.hostname, hostname);
-    
-    return normalized;
+    return result;
   } catch (error) {
-    console.error('Error normalizing URL:', error);
-    return url.trim();
+    console.error('URL normalization error:', error);
+    throw new Error('Invalid URL format');
+  }
+}
+
+// Improved URL validation
+export function isValidUrl(url: string): boolean {
+  try {
+    const testUrl = url.startsWith('http') ? url : `https://${url}`;
+    const urlObj = new URL(testUrl);
+    return ['http:', 'https:'].includes(urlObj.protocol) && 
+           urlObj.hostname.includes('.') && 
+           urlObj.hostname.length > 3;
+  } catch {
+    return false;
   }
 }
 
@@ -114,22 +116,44 @@ export async function getUrl(shortCode: string): Promise<UrlData | null> {
   return await getUrlFromKV(shortCode);
 }
 
+// Simplified short code generation
+function generateShortCode(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 8; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 export async function createShortCode(url: string, metadata?: Partial<UrlData>): Promise<string> {
   if (!url || typeof url !== 'string') {
-    throw new Error('Invalid URL provided');
+    throw new Error('URL is required');
   }
 
-  const normalizedUrl = normalizeUrl(url);
+  if (!isValidUrl(url)) {
+    throw new Error('Invalid URL format');
+  }
 
-  // Check if URL already exists in KV using a direct lookup
-  const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`);
+  let normalizedUrl: string;
+  try {
+    normalizedUrl = normalizeUrl(url);
+  } catch (error) {
+    throw new Error('Failed to normalize URL');
+  }
 
-  if (existingShortCode) {
-    // Verify the short code still exists in KV
-    const existingData = await getUrlFromKV(existingShortCode);
-    if (existingData) {
-      return existingShortCode;
+  // Check for existing URL
+  try {
+    const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`);
+    if (existingShortCode) {
+      const existingData = await getUrlFromKV(existingShortCode);
+      if (existingData) {
+        console.log(`Found existing short code: ${existingShortCode}`);
+        return existingShortCode;
+      }
     }
+  } catch (error) {
+    console.warn('Error checking existing URL:', error);
   }
 
   // Generate unique short code
@@ -138,138 +162,81 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   const maxAttempts = 10;
 
   do {
-    shortCode = Math.random().toString(36).substring(2, 10);
+    shortCode = generateShortCode();
     attempts++;
 
     if (attempts > maxAttempts) {
       throw new Error('Failed to generate unique short code');
     }
-  } while (await getUrlFromKV(shortCode)); // Check uniqueness against KV
+  } while (await getUrlFromKV(shortCode));
 
-  // Enhanced metadata extraction with better YouTube handling
-  let enhancedMetadata = metadata || {};
-  
-  // If metadata is weak or missing, try to fetch better metadata
-  if (isWeakMetadata(metadata)) {
+  // Prepare metadata with fallbacks
+  let finalMetadata = metadata || {};
+
+  // Only fetch metadata if we don't have good metadata already
+  if (isWeakMetadata(finalMetadata)) {
     try {
-      console.log(`Fetching enhanced metadata for: ${url}`);
-      const fetchedMetadata = await fetchPageMetadata(url);
-      
-      // Filter out generic descriptions
-      if (fetchedMetadata.description && isGenericDescription(fetchedMetadata.description)) {
-        fetchedMetadata.description = undefined;
-      }
-      
-      // Filter out generic titles
-      if (fetchedMetadata.title && isGenericDescription(fetchedMetadata.title)) {
-        fetchedMetadata.title = undefined;
-      }
-      
-      enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
+      console.log(`Fetching metadata for: ${normalizedUrl}`);
+      const fetchedMetadata = await fetchPageMetadata(normalizedUrl);
+      finalMetadata = { ...finalMetadata, ...fetchedMetadata };
     } catch (error) {
-      console.error('Error fetching enhanced metadata:', error);
-    }
-  }
-
-  // Special handling for YouTube URLs to ensure dynamic descriptions
-  try {
-    const urlObj = new URL(normalizedUrl);
-    const isYouTube = urlObj.hostname.includes('youtube.com') || urlObj.hostname === 'youtu.be';
-    
-    if (isYouTube && (!enhancedMetadata.description || isGenericDescription(enhancedMetadata.description))) {
-      // Try to extract better YouTube description
-      const youtubeDescription = await extractYouTubeDescription(normalizedUrl);
-      if (youtubeDescription && !isGenericDescription(youtubeDescription)) {
-        enhancedMetadata.description = youtubeDescription;
+      console.warn('Metadata fetch failed, using URL-based fallback:', error);
+      // Create fallback metadata from URL
+      try {
+        const urlObj = new URL(normalizedUrl);
+        finalMetadata = {
+          title: `${urlObj.hostname}`,
+          description: `Link to ${urlObj.hostname}`,
+          favicon: `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`,
+          ...finalMetadata
+        };
+      } catch {
+        finalMetadata = {
+          title: 'Shortened Link',
+          description: 'Click to visit the original link',
+          ...finalMetadata
+        };
       }
     }
-  } catch (error) {
-    console.error('Error in YouTube-specific handling:', error);
   }
 
-  // Store the data in KV
+  // Save the data
   const urlData: UrlData = {
-    originalUrl: url,
-    title: enhancedMetadata?.title,
-    description: enhancedMetadata?.description,
-    image: enhancedMetadata?.image,
-    favicon: enhancedMetadata?.favicon,
+    originalUrl: normalizedUrl,
+    title: finalMetadata.title,
+    description: finalMetadata.description,
+    image: finalMetadata.image,
+    favicon: finalMetadata.favicon,
+  };
+
+  try {
+    await saveUrlToKV(shortCode, urlData);
+    await kv.set(`url_to_code:${normalizedUrl}`, shortCode);
+    console.log(`Created short code: ${shortCode} for ${normalizedUrl}`);
+  } catch (error) {
+    console.error('Error saving URL data:', error);
+    throw new Error('Failed to save shortened URL');
   }
-  
-  await saveUrlToKV(shortCode, urlData);
-  await kv.set(`url_to_code:${normalizedUrl}`, shortCode); // Store reverse mapping for efficient lookup
 
   return shortCode;
 }
 
-// Enhanced YouTube description extraction
-async function extractYouTubeDescription(url: string): Promise<string | undefined> {
-  try {
-    console.log(`Extracting YouTube description for: ${url}`);
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    
-    const html = await response.text();
-    
-    // Multiple extraction strategies for YouTube
-    const extractionPatterns = [
-      /"description":"([^"]+)"/,
-      /"shortDescription":"([^"]+)"/,
-      /"videoDescription":"([^"]+)"/,
-      /<meta name="description" content="([^"]+)">/,
-      /"content":"([^"]{50,500})"/ // General content extraction
-    ];
-    
-    for (const pattern of extractionPatterns) {
-      const match = html.match(pattern);
-      if (match && match[1]) {
-        const description = match[1]
-          .replace(/\\n/g, ' ')
-          .replace(/\\"/g, '"')
-          .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
-          .trim();
-        
-        if (description && description.length > 30 && !isGenericDescription(description)) {
-          console.log(`Found YouTube description: ${description.substring(0, 100)}...`);
-          return description;
-        }
-      }
-    }
-    
-    // Fallback: Extract from JSON-LD
-    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-    if (jsonLdMatch) {
-      try {
-        const jsonData = JSON.parse(jsonLdMatch[1]);
-        const description = jsonData?.description || jsonData?.videoDescription;
-        if (description && !isGenericDescription(description)) {
-          return description;
-        }
-      } catch (e) {
-        console.error('Error parsing JSON-LD:', e);
-      }
-    }
-    
-  } catch (error) {
-    console.error('Error extracting YouTube description:', error);
-  }
-  
-  return undefined;
-}
-
 export async function getAllUrls(): Promise<Record<string, string>> {
-  console.warn("getAllUrls is not fully implemented for Vercel KV and may not return all URLs.");
-  const keys = await kv.keys('url:*'); // Get all keys that start with 'url:'
-  const urls: Record<string, string> = {};
-  for (const key of keys) {
-    const shortCode = key.split(':')[1];
-    const urlData = await getUrlFromKV(shortCode);
-    if (urlData) {
-      urls[shortCode] = urlData.originalUrl;
+  try {
+    const keys = await kv.keys('url:*');
+    const urls: Record<string, string> = {};
+    
+    for (const key of keys) {
+      const shortCode = key.split(':')[1];
+      const urlData = await getUrlFromKV(shortCode);
+      if (urlData) {
+        urls[shortCode] = urlData.originalUrl;
+      }
     }
+    
+    return urls;
+  } catch (error) {
+    console.error('Error getting all URLs:', error);
+    return {};
   }
-  return urls;
 }
