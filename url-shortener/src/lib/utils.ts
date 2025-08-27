@@ -7,11 +7,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export async function fetchPageMetadata(url: string) {
+  console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`);
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10 seconds
 
-    console.log(`Fetching metadata for: ${url}`); // Debugging line
+    console.log(`[fetchPageMetadata] Fetching response for: ${url}`); // Debugging line
     
     const response = await fetch(url, {
       signal: controller.signal,
@@ -35,7 +36,7 @@ export async function fetchPageMetadata(url: string) {
 
     if (!response.ok) {
       const errorHtml = await response.text();
-      console.error(`Failed to fetch ${url}: ${response.status} ${response.statusText}. HTML response: ${errorHtml.substring(0, 500)}`);
+      console.error(`[fetchPageMetadata] Failed to fetch ${url}: ${response.status} ${response.statusText}. HTML response: ${errorHtml.substring(0, 500)}`);
       return {
         title: undefined,
         description: undefined,
@@ -45,7 +46,7 @@ export async function fetchPageMetadata(url: string) {
     }
 
     const html = await response.text();
-    console.log(`Fetched HTML for ${url}:`, html.substring(0, 500)); // Log first 500 characters of HTML
+    console.log(`[fetchPageMetadata] Fetched HTML for ${url}:`, html.substring(0, 500)); // Log first 500 characters of HTML
     
     let title: string | undefined;
     let description: string | undefined;
@@ -54,6 +55,7 @@ export async function fetchPageMetadata(url: string) {
 
     try {
       const $ = cheerio.load(html);
+      console.log(`[fetchPageMetadata] Cheerio loaded HTML for ${url}.`);
 
       title = $("head title").text().trim() || $("meta[property='og:title']").attr("content") || $("meta[name='twitter:title']").attr("content");
       description =
@@ -74,7 +76,7 @@ export async function fetchPageMetadata(url: string) {
       $('script[type="application/ld+json"]').each((_idx, el) => {
         try {
           const ldJson = JSON.parse($(el).text());
-          console.log('Found JSON-LD:', ldJson);
+          console.log('[fetchPageMetadata] Found JSON-LD:', ldJson);
           
           // Prioritize JSON-LD if it contains better data
           if (ldJson['@type'] === 'WebPage' || ldJson['@type'] === 'Product' || ldJson['@type'] === 'Article') {
@@ -100,7 +102,7 @@ export async function fetchPageMetadata(url: string) {
               }
           }
         } catch (e) {
-          console.error("Error parsing JSON-LD:", e);
+          console.error('[fetchPageMetadata] Error parsing JSON-LD:', e);
         }
       });
 
@@ -111,7 +113,7 @@ export async function fetchPageMetadata(url: string) {
         $("link[rel='apple-touch-icon']").attr("href") ||
         $("link[rel='apple-touch-icon-precomposed']").attr("href");
     } catch (e) {
-        console.error("Error loading HTML with Cheerio or parsing meta tags:", e);
+        console.error('[fetchPageMetadata] Error loading HTML with Cheerio or parsing meta tags:', e);
     }
 
     try {
@@ -125,7 +127,7 @@ export async function fetchPageMetadata(url: string) {
             image = new URL(image, baseUrl.origin).toString();
           }
         } catch (e) {
-          console.error("Error resolving image URL:", e);
+          console.error('[fetchPageMetadata] Error resolving image URL:', e);
           image = undefined;
         }
       }
@@ -140,12 +142,12 @@ export async function fetchPageMetadata(url: string) {
             favicon = new URL(favicon, baseUrl.origin).toString();
           }
         } catch (e) {
-          console.error("Error resolving favicon URL:", e);
+          console.error('[fetchPageMetadata] Error resolving favicon URL:', e);
           favicon = undefined;
         }
       }
     } catch (e) {
-      console.error("Error creating base URL:", e);
+      console.error('[fetchPageMetadata] Error creating base URL:', e);
       title = title || undefined;
       description = description || undefined;
       image = undefined;
@@ -158,10 +160,10 @@ export async function fetchPageMetadata(url: string) {
       image: image || undefined,
       favicon: favicon || undefined,
     };
-    console.log(`Successfully extracted metadata for ${url}:`, metadata); // Debugging line
+    console.log(`[fetchPageMetadata] Successfully extracted metadata for ${url}:`, metadata); // Debugging line
     return metadata;
   } catch (error) {
-    console.error(`Error fetching metadata for ${url}:`, error);
+    console.error(`[fetchPageMetadata] Error fetching metadata for ${url}:`, error);
     return {
       title: undefined,
       description: undefined,
