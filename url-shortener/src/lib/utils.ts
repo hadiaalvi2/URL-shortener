@@ -53,6 +53,8 @@ export async function fetchPageMetadata(url: string) {
       $("meta[itemprop='description']").attr("content");
     let image =
       $("meta[property='og:image']").attr("content") ||
+      $("meta[property='og:image:url']").attr("content") || // Added og:image:url
+      $("meta[property='og:image:secure_url']").attr("content") || // Added og:image:secure_url
       $("meta[name='twitter:image']").attr("content") ||
       $("meta[name='twitter:image:src']").attr("content") ||
       $("link[rel='image_src']").attr("href") || // Add image_src link tag
