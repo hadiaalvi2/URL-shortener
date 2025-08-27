@@ -9,8 +9,9 @@ export function cn(...inputs: ClassValue[]) {
 export async function fetchPageMetadata(url: string) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10 seconds
 
+    console.log(`Fetching metadata for: ${url}`); // Debugging line
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
@@ -23,6 +24,16 @@ export async function fetchPageMetadata(url: string) {
 
     clearTimeout(timeoutId);
 
+    if (!response.ok) {
+      console.error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+      return {
+        title: undefined,
+        description: undefined,
+        image: undefined,
+        favicon: undefined,
+      };
+    }
+
     const html = await response.text();
     const $ = cheerio.load(html);
 
@@ -31,6 +42,7 @@ export async function fetchPageMetadata(url: string) {
       $("meta[name='description']").attr("content") ||
       $("meta[property='og:description']").attr("content") ||
       $("meta[name='twitter:description']").attr("content") ||
+      $("meta[itemprop='description']").attr("content") || // Added itemprop for description
       undefined;
     const image =
       $("meta[property='og:image']").attr("content") ||
@@ -64,12 +76,14 @@ export async function fetchPageMetadata(url: string) {
       favicon = undefined;
     }
 
-    return {
+    const metadata = {
       title: title || undefined,
       description,
       image,
       favicon,
     };
+    console.log(`Successfully extracted metadata for ${url}:`, metadata); // Debugging line
+    return metadata;
   } catch (error) {
     console.error(`Error fetching metadata for ${url}:`, error);
     return {
