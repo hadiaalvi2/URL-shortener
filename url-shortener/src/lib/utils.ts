@@ -259,6 +259,27 @@ export async function fetchPageMetadata(url: string) {
       }
     } catch {}
 
+    // External service fallback (optional): Microlink
+    try {
+      if ((!title && !description && !image) || !image) {
+        const apiKey = process.env.MICROLINK_API_KEY;
+        if (apiKey) {
+          const mUrl = `https://pro.microlink.io/?url=${encodeURIComponent(url)}&audio=false&video=false&iframe=false&screenshot=false`;
+          const mRes = await fetch(mUrl, { headers: { 'x-api-key': apiKey }, cache: 'no-store' });
+          if (mRes.ok) {
+            const json = await mRes.json();
+            const data = json && json.data ? json.data : {};
+            title = title || data.title;
+            description = description || data.description;
+            image = image || (data.image && (data.image.url || data.image.src));
+            favicon = favicon || (data.logo && (data.logo.url || data.logo.src));
+          }
+        }
+      }
+    } catch (svcErr) {
+      console.warn('[fetchPageMetadata] Microlink fallback failed or not configured:', svcErr);
+    }
+
     const metadata = {
       title: title || undefined,
       description: description || undefined,
