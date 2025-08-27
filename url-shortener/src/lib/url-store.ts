@@ -99,14 +99,12 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   } while (await getUrlFromKV(shortCode)); // Check uniqueness against KV
 
   // Store the data in KV
-  const scrapedMetadata = await fetchPageMetadata(url)
-
   const urlData: UrlData = {
     originalUrl: url,
-    title: metadata?.title || scrapedMetadata.title,
-    description: metadata?.description || scrapedMetadata.description,
-    image: metadata?.image || scrapedMetadata.image,
-    favicon: metadata?.favicon || scrapedMetadata.favicon,
+    title: metadata?.title,
+    description: metadata?.description,
+    image: metadata?.image,
+    favicon: metadata?.favicon,
   }
   
   await saveUrlToKV(shortCode, urlData);

@@ -25,14 +25,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       }
     }
 
-    const title = data.title || "Shortened Link"
-    const description = data.description || "Open this link"
+    const title = data.title
+    const description = data.description
     
     const imageUrl = data.image 
       ? data.image.startsWith('http') 
         ? data.image 
         : new URL(data.image, metadataBase).toString()
-      : new URL("/og-default.png", metadataBase).toString()
+      : undefined // Removed fallback to og-default.png
 
 
     return {
@@ -44,19 +44,19 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         title,
         description,
         url: new URL(`/${shortCode}`, metadataBase).toString(),
-        images: [{
+        images: imageUrl ? [{
           url: imageUrl,
           width: 1200,
           height: 630,
-          alt: title,
-        }],
+          alt: title || '',
+        }] : [],
         siteName: "URL Shortener",
       },
       twitter: {
         card: 'summary_large_image',
         title,
         description,
-        images: [imageUrl],
+        images: imageUrl ? [imageUrl] : [],
       },
     }
   } catch (error) {
@@ -100,26 +100,26 @@ export default async function RedirectPage(props: Props) {
     // For social media bots, show preview instead of redirecting
     if (isSocialMediaBot) {
       const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
-      const title = data.title || `Page from ${domain}`
-      const description = data.description || "Check out this shared link"
-      const imageUrl = data.image || "/og-default.png"
+      const title = data.title
+      const description = data.description
+      const imageUrl = data.image
 
 
       return (
         <html>
           <head>
-            <title>{title}</title>
+            <title>{title || "Shortened Link"}</title>
             {data.favicon && <link rel="icon" href={data.favicon} />}
-            <meta property="og:title" content={title} />
-            <meta property="og:description" content={description} />
-            <meta property="og:image" content={imageUrl} />
+            {title && <meta property="og:title" content={title} />}
+            {description && <meta property="og:description" content={description} />}
+            {imageUrl && <meta property="og:image" content={imageUrl} />}
             <meta property="og:url" content={`${baseUrl}/${shortCode}`} />
             <meta property="og:type" content="website" />
             <meta property="og:site_name" content="URL Shortener" />
             <meta name="twitter:card" content="summary_large_image" />
-            <meta name="twitter:title" content={title} />
-            <meta name="twitter:description" content={description} />
-            <meta name="twitter:image" content={imageUrl} />
+            {title && <meta name="twitter:title" content={title} />}
+            {description && <meta name="twitter:description" content={description} />}
+            {imageUrl && <meta name="twitter:image" content={imageUrl} />}
           </head>
           <body>
             <main className="min-h-screen bg-gray-50 p-6">
@@ -128,7 +128,7 @@ export default async function RedirectPage(props: Props) {
                   <div className="w-full h-48 bg-gray-200 overflow-hidden">
                     <Image 
                       src={imageUrl} 
-                      alt={title}
+                      alt={title || 'Preview Image'}
                       width={800}
                       height={400}
                       className="w-full h-full object-cover"
@@ -144,12 +144,12 @@ export default async function RedirectPage(props: Props) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h1 className="text-xl font-bold text-gray-900 truncate">
-                        {title}
+                        {title || 'Shortened Link'}
                       </h1>
                       <p className="text-sm text-gray-500 truncate">{domain}</p>
                     </div>
                   </div>
-                  <p className="text-gray-700">{description}</p>
+                  <p className="text-gray-700">{description || 'Check out this shared link'}</p>
                 </div>
 
                 <div className="p-6">
