@@ -47,7 +47,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         type: 'website',
         title,
         description,
-        url: new URL(`/${shortCode}`, metadataBase).toString(),
+        // Prefer the original URL so preview platforms show the target domain
+        url: original ? original.toString() : new URL(`/${shortCode}`, metadataBase).toString(),
         images: imageUrl ? [{
           url: imageUrl,
           width: 1200,
@@ -102,11 +103,11 @@ export default async function RedirectPage(props: Props) {
       )
     }
 
-    // For social media bots, show preview instead of redirecting
+
     if (isSocialMediaBot) {
       const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
       const title = data.title
-      // Avoid showing short link as description in previews
+
       const description = data.description || undefined
       const imageUrl = data.image
 
@@ -119,7 +120,8 @@ export default async function RedirectPage(props: Props) {
             {title && <meta property="og:title" content={title} />}
             {description && <meta property="og:description" content={description} />}
             {imageUrl && <meta property="og:image" content={imageUrl} />}
-            <meta property="og:url" content={`${baseUrl}/${shortCode}`} />
+            {/* Prefer original URL so chat apps show original domain */}
+            <meta property="og:url" content={data.originalUrl} />
             <meta property="og:type" content="website" />
             <meta property="og:site_name" content="URL Shortener" />
             <meta name="twitter:card" content="summary_large_image" />
