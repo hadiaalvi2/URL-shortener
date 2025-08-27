@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
-import { getUrl } from "@/lib/url-store"
+import { getUrl, updateUrlData, isWeakMetadata } from "@/lib/url-store"
+import { fetchPageMetadata } from "@/lib/utils"
 import type { Metadata } from "next"
 import Image from "next/image"
 
@@ -13,7 +14,7 @@ const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const { shortCode } = await params
-    const data = await getUrl(shortCode)
+    let data = await getUrl(shortCode)
     const metadataBase = new URL(baseUrl)
 
     if (!data) {
@@ -25,6 +26,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     }
 
     const original = data.originalUrl ? new URL(data.originalUrl) : null
+
+    // If stored metadata is weak or missing description, try fetching a fresh one
+    try {
+      if (!data.description || isWeakMetadata(data)) {
+        const fresh = await fetchPageMetadata(data.originalUrl)
+        const improved = await updateUrlData(shortCode, fresh)
+        if (improved) {
+          data = improved
+        }
+      }
+    } catch {}
     const domainFallback = original ? original.hostname : undefined
     const title = data.title || domainFallback
     // Never include URL in description - only use actual description or title
@@ -103,9 +115,20 @@ export default async function RedirectPage(props: Props) {
 
     if (isSocialMediaBot) {
       const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
-      const title = data.title
-      const description = data.description || undefined
-      const imageUrl = data.image
+      let title = data.title
+      let description = data.description || undefined
+      let imageUrl = data.image
+
+      // Opportunistically refresh weak/missing metadata for previews
+      try {
+        if (!description || isWeakMetadata(data)) {
+          const fresh = await fetchPageMetadata(data.originalUrl)
+          title = fresh.title || title
+          description = fresh.description || description
+          imageUrl = fresh.image || imageUrl
+          await updateUrlData(shortCode, fresh)
+        }
+      } catch {}
 
       return (
         <html>
