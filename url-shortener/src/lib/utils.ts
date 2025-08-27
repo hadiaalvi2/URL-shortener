@@ -35,6 +35,7 @@ export async function fetchPageMetadata(url: string) {
     });
 
     clearTimeout(timeoutId);
+    const effectiveUrl = response.url || url; // final URL after redirects
 
     if (!response.ok) {
       const errorHtml = await response.text();
@@ -53,20 +54,52 @@ export async function fetchPageMetadata(url: string) {
       const $ = cheerio.load(html);
       console.log(`[fetchPageMetadata] Cheerio loaded HTML for ${url}.`);
 
-      title = $("head title").text().trim() || $("meta[property='og:title']").attr("content") || $("meta[name='twitter:title']").attr("content");
+      const readMeta = (selectors: string[]): string | undefined => {
+        for (const sel of selectors) {
+          const val = $(sel).attr("content") || $(sel).attr("href");
+          if (val && typeof val === "string" && val.trim().length > 0) return val.trim();
+        }
+        return undefined;
+      };
+
+      title =
+        $("head title").text().trim() ||
+        readMeta([
+          "meta[property='og:title']",
+          "meta[name='og:title']",
+          "meta[name='twitter:title']",
+          "meta[itemprop='name']",
+        ]);
+
       description =
-        $("meta[name='description']").attr("content") ||
-        $("meta[property='og:description']").attr("content") ||
-        $("meta[name='twitter:description']").attr("content") ||
-        $("meta[itemprop='description']").attr("content");
-      image =
-        $("meta[property='og:image']").attr("content") ||
-        $("meta[property='og:image:url']").attr("content") ||
-        $("meta[property='og:image:secure_url']").attr("content") ||
-        $("meta[name='twitter:image']").attr("content") ||
-        $("meta[name='twitter:image:src']").attr("content") ||
-        $("link[rel='image_src']").attr("href") ||
-        $("meta[itemprop='image']").attr("content");
+        readMeta([
+          "meta[name='description']",
+          "meta[property='og:description']",
+          "meta[name='og:description']",
+          "meta[name='twitter:description']",
+          "meta[itemprop='description']",
+        ]);
+
+      const candidateImageSelectors = [
+        "meta[property='og:image']",
+        "meta[property='og:image:url']",
+        "meta[property='og:image:secure_url']",
+        "meta[name='og:image']",
+        "meta[name='og:image:url']",
+        "meta[name='og:image:secure_url']",
+        "meta[name='twitter:image']",
+        "meta[name='twitter:image:src']",
+        "link[rel='image_src']",
+        "meta[itemprop='image']",
+      ];
+      const candidates: string[] = [];
+      for (const sel of candidateImageSelectors) {
+        $(sel).each((_i, el) => {
+          const v = $(el).attr("content") || $(el).attr("href");
+          if (v && !candidates.includes(v)) candidates.push(v);
+        });
+      }
+      image = candidates.find(Boolean);
 
       // Attempt to extract metadata from JSON-LD
       $('script[type="application/ld+json"]').each((_idx, el) => {
@@ -113,7 +146,7 @@ export async function fetchPageMetadata(url: string) {
     }
 
     try {
-      const baseUrl = new URL(url);
+      const baseUrl = new URL(effectiveUrl);
       // Resolve image URL
       if (image) {
         try {
@@ -176,6 +209,47 @@ export async function fetchPageMetadata(url: string) {
         console.warn('[fetchPageMetadata] Error during fallback extraction:', fallbackError);
       }
     }
+
+    // AMP page fallback for commerce/publisher sites
+    try {
+      if (!image || !title || !description) {
+        const $h = cheerio.load(html);
+        const ampHref = $h("link[rel='amphtml']").attr("href");
+        if (ampHref) {
+          const ampUrl = new URL(ampHref, new URL(effectiveUrl).origin).toString();
+          console.log(`[fetchPageMetadata] Fetching AMP page: ${ampUrl}`);
+          const ampRes = await fetch(ampUrl, { cache: "no-store" });
+          if (ampRes.ok) {
+            const ampHtml = await ampRes.text();
+            const $a = cheerio.load(ampHtml);
+            title = title || $a("meta[property='og:title']").attr("content") || $a("head title").text().trim();
+            description = description ||
+              $a("meta[property='og:description']").attr("content") ||
+              $a("meta[name='description']").attr("content");
+            image = image ||
+              $a("meta[property='og:image']").attr("content") ||
+              $a("meta[name='twitter:image']").attr("content");
+          }
+        }
+      }
+    } catch (ampErr) {
+      console.warn('[fetchPageMetadata] AMP fallback failed:', ampErr);
+    }
+
+    // YouTube thumbnail heuristic
+    try {
+      const u = new URL(effectiveUrl);
+      if ((!image || image.length === 0) && (u.hostname.endsWith("youtube.com") || u.hostname === "youtu.be")) {
+        let vid = u.searchParams.get("v");
+        if (!vid) {
+          const parts = u.pathname.split("/").filter(Boolean);
+          vid = parts[0];
+        }
+        if (vid) {
+          image = `https://img.youtube.com/vi/${vid}/maxresdefault.jpg`;
+        }
+      }
+    } catch {}
 
     // Final pass: provide a sensible favicon fallback via Google S2 service
     try {
