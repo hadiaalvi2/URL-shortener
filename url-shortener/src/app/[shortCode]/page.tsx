@@ -10,7 +10,6 @@ interface Props {
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!
 
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const { shortCode } = await params
@@ -28,7 +27,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const original = data.originalUrl ? new URL(data.originalUrl) : null
     const domainFallback = original ? original.hostname : undefined
     const title = data.title || domainFallback
-    // Never fall back to a URL string for description; omit if unavailable
+    // Never include URL in description - only use actual description or title
     const description = data.description || data.title || undefined
     
     const googleFavicon = original ? `https://www.google.com/s2/favicons?domain=${original.hostname}&sz=256` : undefined
@@ -37,7 +36,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         ? data.image 
         : new URL(data.image, metadataBase).toString()
       : (data.favicon || googleFavicon)
-
 
     return {
       metadataBase,
@@ -103,14 +101,11 @@ export default async function RedirectPage(props: Props) {
       )
     }
 
-
     if (isSocialMediaBot) {
       const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
       const title = data.title
-
       const description = data.description || undefined
       const imageUrl = data.image
-
 
       return (
         <html>
@@ -157,7 +152,7 @@ export default async function RedirectPage(props: Props) {
                       <p className="text-sm text-gray-500 truncate">{domain}</p>
                     </div>
                   </div>
-                  <p className="text-gray-700">{description || 'Check out this shared link'}</p>
+                  {description && <p className="text-gray-700">{description}</p>}
                 </div>
 
                 <div className="p-6">
@@ -175,15 +170,12 @@ export default async function RedirectPage(props: Props) {
       )
     }
 
-
     redirect(data.originalUrl)
     
     return null
 
   } catch (error) {
-
     if (typeof error === 'object' && error !== null && 'digest' in error) {
-      
       throw error
     }
     
