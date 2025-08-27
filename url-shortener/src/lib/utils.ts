@@ -43,6 +43,7 @@ export async function fetchPageMetadata(url: string) {
     }
 
     const html = await response.text();
+    console.log(`Fetched HTML for ${url}:`, html.substring(0, 500)); // Log first 500 characters of HTML
     const $ = cheerio.load(html);
 
     const title = $("head title").text().trim() || $("meta[property='og:title']").attr("content") || $("meta[name='twitter:title']").attr("content");
