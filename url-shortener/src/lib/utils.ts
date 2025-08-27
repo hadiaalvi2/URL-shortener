@@ -37,25 +37,23 @@ export async function fetchPageMetadata(url: string) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    const title = $("head title").text().trim();
+    const title = $("head title").text().trim() || $("meta[property='og:title']").attr("content") || $("meta[name='twitter:title']").attr("content");
     const description =
       $("meta[name='description']").attr("content") ||
       $("meta[property='og:description']").attr("content") ||
       $("meta[name='twitter:description']").attr("content") ||
-      $("meta[itemprop='description']").attr("content") || // Added itemprop for description
-      undefined;
+      $("meta[itemprop='description']").attr("content");
     const image =
       $("meta[property='og:image']").attr("content") ||
       $("meta[name='twitter:image']").attr("content") ||
-      undefined;
+      $("meta[name='twitter:image:src']").attr("content");
 
     // Try all common rel attributes for favicon
     let favicon =
       $("link[rel='icon']").attr("href") ||
       $("link[rel='shortcut icon']").attr("href") ||
       $("link[rel='apple-touch-icon']").attr("href") ||
-      $("link[rel='apple-touch-icon-precomposed']").attr("href") ||
-      undefined;
+      $("link[rel='apple-touch-icon-precomposed']").attr("href");
 
     try {
       const baseUrl = new URL(url);
@@ -67,9 +65,6 @@ export async function fetchPageMetadata(url: string) {
           // relative URL
           favicon = new URL(favicon, baseUrl.origin).toString();
         }
-      } else {
-        // Fallback to default /favicon.ico
-        favicon = `${baseUrl.origin}/favicon.ico`;
       }
     } catch (e) {
       console.error("Error constructing favicon URL:", e);
@@ -78,9 +73,9 @@ export async function fetchPageMetadata(url: string) {
 
     const metadata = {
       title: title || undefined,
-      description,
-      image,
-      favicon,
+      description: description || undefined,
+      image: image || undefined,
+      favicon: favicon || undefined,
     };
     console.log(`Successfully extracted metadata for ${url}:`, metadata); // Debugging line
     return metadata;
