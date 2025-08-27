@@ -26,19 +26,41 @@ export async function saveUrlToKV(shortCode: string, data: UrlData) {
   await kv.set(`url:${shortCode}`, data)
 }
 
+// Enhanced function to detect generic metadata
 export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   if (!data) return true;
+  
   const genericTitle = data.title?.toLowerCase().startsWith("page from ") ?? false;
-  const genericDescription = (() => {
-    const d = (data.description || '').toLowerCase();
-    if (!d) return true;
-    if (d === (data.title || '').toLowerCase()) return true;
-    if (d.includes('enjoy the videos and music you love')) return true; // YouTube generic
-    return false;
-  })();
+  const genericDescription = isGenericDescription(data.description);
   const googleFavicon = data.favicon?.includes("google.com/s2/favicons") ?? false;
   const missingCore = !data.title && !data.description && !data.image;
+  
   return genericTitle || genericDescription || googleFavicon || missingCore;
+}
+
+// Function to detect and filter generic descriptions
+function isGenericDescription(desc?: string): boolean {
+  if (!desc) return true;
+  
+  const genericPatterns = [
+    /enjoy (the|this) (video|content)/i,
+    /watch (now|video|this)/i,
+    /check out (this|the|my)/i,
+    /click (here|now)/i,
+    /^video$/i,
+    /^page$/i,
+    /^website$/i,
+    /^view (more|content)$/i,
+    /^see (more|details)$/i,
+    /shared (link|content)/i,
+    /default (description|title)/i,
+    /^[\W\s]*$/, // Only special characters or whitespace
+  ];
+  
+  const isTooShort = desc.trim().length < 25;
+  const isGeneric = genericPatterns.some(pattern => pattern.test(desc.trim()));
+  
+  return isTooShort || isGeneric;
 }
 
 export async function updateUrlData(shortCode: string, partial: Partial<UrlData>): Promise<UrlData | null> {
@@ -124,13 +146,54 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   } while (await getUrlFromKV(shortCode)); // Check uniqueness against KV
 
+  // Enhanced metadata extraction with better YouTube handling
+  let enhancedMetadata = metadata || {};
+  
+  // If metadata is weak or missing, try to fetch better metadata
+  if (isWeakMetadata(metadata)) {
+    try {
+      console.log(`Fetching enhanced metadata for: ${url}`);
+      const fetchedMetadata = await fetchPageMetadata(url);
+      
+      // Filter out generic descriptions
+      if (fetchedMetadata.description && isGenericDescription(fetchedMetadata.description)) {
+        fetchedMetadata.description = undefined;
+      }
+      
+      // Filter out generic titles
+      if (fetchedMetadata.title && isGenericDescription(fetchedMetadata.title)) {
+        fetchedMetadata.title = undefined;
+      }
+      
+      enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
+    } catch (error) {
+      console.error('Error fetching enhanced metadata:', error);
+    }
+  }
+
+  // Special handling for YouTube URLs to ensure dynamic descriptions
+  try {
+    const urlObj = new URL(normalizedUrl);
+    const isYouTube = urlObj.hostname.includes('youtube.com') || urlObj.hostname === 'youtu.be';
+    
+    if (isYouTube && (!enhancedMetadata.description || isGenericDescription(enhancedMetadata.description))) {
+      // Try to extract better YouTube description
+      const youtubeDescription = await extractYouTubeDescription(normalizedUrl);
+      if (youtubeDescription && !isGenericDescription(youtubeDescription)) {
+        enhancedMetadata.description = youtubeDescription;
+      }
+    }
+  } catch (error) {
+    console.error('Error in YouTube-specific handling:', error);
+  }
+
   // Store the data in KV
   const urlData: UrlData = {
     originalUrl: url,
-    title: metadata?.title,
-    description: metadata?.description,
-    image: metadata?.image,
-    favicon: metadata?.favicon,
+    title: enhancedMetadata?.title,
+    description: enhancedMetadata?.description,
+    image: enhancedMetadata?.image,
+    favicon: enhancedMetadata?.favicon,
   }
   
   await saveUrlToKV(shortCode, urlData);
@@ -139,8 +202,65 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   return shortCode;
 }
 
+// Enhanced YouTube description extraction
+async function extractYouTubeDescription(url: string): Promise<string | undefined> {
+  try {
+    console.log(`Extracting YouTube description for: ${url}`);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
+    const html = await response.text();
+    
+    // Multiple extraction strategies for YouTube
+    const extractionPatterns = [
+      /"description":"([^"]+)"/,
+      /"shortDescription":"([^"]+)"/,
+      /"videoDescription":"([^"]+)"/,
+      /<meta name="description" content="([^"]+)">/,
+      /"content":"([^"]{50,500})"/ // General content extraction
+    ];
+    
+    for (const pattern of extractionPatterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        const description = match[1]
+          .replace(/\\n/g, ' ')
+          .replace(/\\"/g, '"')
+          .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
+          .trim();
+        
+        if (description && description.length > 30 && !isGenericDescription(description)) {
+          console.log(`Found YouTube description: ${description.substring(0, 100)}...`);
+          return description;
+        }
+      }
+    }
+    
+    // Fallback: Extract from JSON-LD
+    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+    if (jsonLdMatch) {
+      try {
+        const jsonData = JSON.parse(jsonLdMatch[1]);
+        const description = jsonData?.description || jsonData?.videoDescription;
+        if (description && !isGenericDescription(description)) {
+          return description;
+        }
+      } catch (e) {
+        console.error('Error parsing JSON-LD:', e);
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error extracting YouTube description:', error);
+  }
+  
+  return undefined;
+}
+
 export async function getAllUrls(): Promise<Record<string, string>> {
- 
   console.warn("getAllUrls is not fully implemented for Vercel KV and may not return all URLs.");
   const keys = await kv.keys('url:*'); // Get all keys that start with 'url:'
   const urls: Record<string, string> = {};
