@@ -28,7 +28,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const original = data.originalUrl ? new URL(data.originalUrl) : null
     const domainFallback = original ? original.hostname : undefined
     const title = data.title || domainFallback
-    const description = data.description || data.title || data.originalUrl
+    // Never fall back to a URL string for description; omit if unavailable
+    const description = data.description || data.title || undefined
     
     const googleFavicon = original ? `https://www.google.com/s2/favicons?domain=${original.hostname}&sz=256` : undefined
     const imageUrl = data.image 
@@ -105,7 +106,8 @@ export default async function RedirectPage(props: Props) {
     if (isSocialMediaBot) {
       const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
       const title = data.title
-      const description = data.description
+      // Avoid showing short link as description in previews
+      const description = data.description || undefined
       const imageUrl = data.image
 
 
