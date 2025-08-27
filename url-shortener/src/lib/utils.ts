@@ -51,10 +51,12 @@ export async function fetchPageMetadata(url: string) {
       $("meta[property='og:description']").attr("content") ||
       $("meta[name='twitter:description']").attr("content") ||
       $("meta[itemprop='description']").attr("content");
-    const image =
+    let image =
       $("meta[property='og:image']").attr("content") ||
       $("meta[name='twitter:image']").attr("content") ||
-      $("meta[name='twitter:image:src']").attr("content");
+      $("meta[name='twitter:image:src']").attr("content") ||
+      $("link[rel='image_src']").attr("href") || // Add image_src link tag
+      $("meta[itemprop='image']").attr("content"); // Add itemprop image
 
     // Try all common rel attributes for favicon
     let favicon =
@@ -65,6 +67,17 @@ export async function fetchPageMetadata(url: string) {
 
     try {
       const baseUrl = new URL(url);
+      // Resolve image URL
+      let resolvedImage = image; // Use a temporary variable for resolution
+      if (resolvedImage) {
+        if (resolvedImage.startsWith("//")) {
+          resolvedImage = `${baseUrl.protocol}${resolvedImage}`;
+        } else if (!resolvedImage.startsWith("http")) {
+          resolvedImage = new URL(resolvedImage, baseUrl.origin).toString();
+        }
+      }
+      image = resolvedImage; // Assign back to original image variable
+
       if (favicon) {
         if (favicon.startsWith("//")) {
           // protocol-relative URL
@@ -75,8 +88,9 @@ export async function fetchPageMetadata(url: string) {
         }
       }
     } catch (e) {
-      console.error("Error constructing favicon URL:", e);
+      console.error("Error constructing URL for image or favicon:", e); // Updated error message
       favicon = undefined;
+      image = undefined; // Also set image to undefined on error
     }
 
     const metadata = {
