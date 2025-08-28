@@ -174,7 +174,7 @@ async function fetchYouTubeMetadata(url: string): Promise<{
         const html = await response.text()
         const $ = cheerio.load(html)
 
-        let title =
+        const title =
           $('meta[property="og:title"]').attr("content") ||
           $("title").text().replace(" - YouTube", "").trim() ||
           "YouTube Video"
@@ -188,7 +188,7 @@ async function fetchYouTubeMetadata(url: string): Promise<{
           description = `Watch "${title}" on YouTube`
         }
 
-        let imageUrl =
+        const imageUrl =
           $('meta[property="og:image"]').attr("content") ||
           `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
 
