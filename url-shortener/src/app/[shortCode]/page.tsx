@@ -14,7 +14,7 @@ const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const { shortCode } = await params
-    let data = await getUrl(shortCode) // This now handles cache refresh automatically
+    const data = await getUrl(shortCode) // This now handles cache refresh automatically
     const metadataBase = new URL(baseUrl)
 
     if (!data) {

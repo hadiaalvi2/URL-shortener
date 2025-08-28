@@ -229,12 +229,7 @@ export default function ShortenerPage() {
           </div>
         )}
 
-        <div className="text-center text-sm text-gray-600 max-w-md mx-auto">
-          <p>
-            Our URL shortener automatically fetches the latest metadata from your links, 
-            ensuring social media previews always show current information.
-          </p>
-        </div>
+       
       </div>
     </div>
   )
