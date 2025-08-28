@@ -6,11 +6,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-
 async function safeFetch(
   url: string,
   options: RequestInit = {},
-  timeout = 15000 // Increased timeout for better reliability
+  timeout = 15000
 ): Promise<Response> {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeout)
@@ -91,7 +90,6 @@ export async function fetchPageMetadata(url: string, retryCount = 2) {
       console.error(`[fetchPageMetadata] Attempt ${attempt} failed for ${url}:`, error)
       
       if (attempt < retryCount) {
-        // Wait a bit before retrying
         await new Promise(resolve => setTimeout(resolve, 1000))
         continue
       }
@@ -105,7 +103,6 @@ export async function fetchPageMetadata(url: string, retryCount = 2) {
     }
   }
 
-  // Fallback (shouldn't reach here)
   return {
     title: extractDomainTitle(url),
     description: "",
@@ -233,7 +230,40 @@ async function fetchYouTubeMetadata(url: string): Promise<{
       }
     }
 
-    // Method 1: Try oEmbed first (more reliable)
+    // Method 1: Try YouTube Data API if available
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    if (apiKey) {
+      try {
+        const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${apiKey}`
+        const response = await safeFetch(apiUrl)
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (data.items && data.items.length > 0) {
+            const snippet = data.items[0].snippet
+            const title = snippet.title || "YouTube Video"
+            const description = snippet.description || `Watch "${title}" on YouTube`
+            const thumbnailUrl = snippet.thumbnails?.maxres?.url || 
+                               snippet.thumbnails?.high?.url || 
+                               snippet.thumbnails?.medium?.url ||
+                               `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+
+            console.log(`[fetchYouTubeMetadata] API success:`, { title })
+
+            return {
+              title,
+              description: description.substring(0, 300), // Limit description length
+              image: thumbnailUrl,
+              favicon: "https://www.youtube.com/favicon.ico",
+            }
+          }
+        }
+      } catch (apiError) {
+        console.log("[fetchYouTubeMetadata] API failed, trying oEmbed:", apiError)
+      }
+    }
+
+    // Method 2: Try oEmbed
     try {
       const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
       const response = await safeFetch(oEmbedUrl)
@@ -259,7 +289,7 @@ async function fetchYouTubeMetadata(url: string): Promise<{
       console.log("[fetchYouTubeMetadata] oEmbed failed, trying direct scrape:", oEmbedError)
     }
 
-    // Method 2: Direct scrape as fallback
+    // Method 3: Direct scrape as fallback
     try {
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
       const response = await safeFetch(youtubeUrl, {
@@ -297,7 +327,7 @@ async function fetchYouTubeMetadata(url: string): Promise<{
 
         return {
           title,
-          description,
+          description: description.substring(0, 300),
           image: imageUrl,
           favicon: "https://www.youtube.com/favicon.ico",
         }
