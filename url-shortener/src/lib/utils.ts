@@ -6,24 +6,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-async function safeFetch(url: string, options: RequestInit = {}, timeout = 5000): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(id);
-  }
-}
-
 export async function fetchPageMetadata(url: string) {
   console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`);
   try {
-  
+    // Special handling for YouTube URLs
     const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
     
     if (isYouTube) {
@@ -49,10 +35,6 @@ export async function fetchPageMetadata(url: string) {
 
     if (!response.ok) {
       console.error(`[fetchPageMetadata] Failed to fetch ${url}: ${response.status} ${response.statusText}`);
-      // For failed requests, try YouTube-specific extraction if it's a YouTube URL
-      if (effectiveUrl.includes('youtube.com') || effectiveUrl.includes('youtu.be')) {
-        return await fetchYouTubeMetadata(effectiveUrl);
-      }
       return { title: undefined, description: undefined, image: undefined, favicon: undefined };
     }
 
@@ -81,18 +63,6 @@ export async function fetchPageMetadata(url: string) {
                $("link[rel='shortcut icon']").attr("href") ||
                $("link[rel='apple-touch-icon']").attr("href");
 
-      // Try to extract from JSON-LD
-      try {
-        const jsonLdScript = $('script[type="application/ld+json"]').html();
-        if (jsonLdScript) {
-          const jsonLd = JSON.parse(jsonLdScript);
-          if (jsonLd && !title) title = jsonLd.name || jsonLd.headline;
-          if (jsonLd && !description) description = jsonLd.description;
-        }
-      } catch (e) {
-        console.log('Could not parse JSON-LD');
-      }
-
     } catch (e) {
       console.error('[fetchPageMetadata] Error parsing HTML:', e);
     }
@@ -120,10 +90,9 @@ export async function fetchPageMetadata(url: string) {
       } catch {}
     }
 
-  
+    // Clean up title and description
     if (title) {
       title = title.replace(/\s+/g, ' ').trim();
-    
       if (title.includes(' - YouTube')) {
         title = title.replace(' - YouTube', '');
       }
@@ -152,6 +121,7 @@ export async function fetchPageMetadata(url: string) {
   }
 }
 
+// Specialized function for YouTube metadata extraction
 async function fetchYouTubeMetadata(url: string): Promise<{ title?: string; description?: string; image?: string; favicon?: string }> {
   try {
     console.log(`[fetchYouTubeMetadata] Extracting metadata for YouTube video: ${url}`);
@@ -162,30 +132,34 @@ async function fetchYouTubeMetadata(url: string): Promise<{ title?: string; desc
       return { title: undefined, description: undefined, image: undefined, favicon: undefined };
     }
 
-    
+    // Method 1: Use YouTube oEmbed API (for title and thumbnail)
     try {
       const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-      const response = await safeFetch(oEmbedUrl, {}, 5000);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(oEmbedUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
       
       if (response.ok) {
         const data = await response.json();
         const title = data.title;
         const thumbnailUrl = data.thumbnail_url;
+        const authorName = data.author_name;
         
-     
-        let description = undefined;
-        if (thumbnailUrl) {
-          const match = thumbnailUrl.match(/yt\d\.ggpht\.com\/[^/]+\/[^/]+\/[^/]+\/[^/]+\/([^/]+)/);
-          if (match && match[1]) {
-            description = `${decodeURIComponent(match[1])} • YouTube`;
-          }
+        // Method 2: Try to get description from YouTube page directly
+        let description = await getYouTubeDescription(videoId);
+        
+        // If we can't get the description, use a fallback
+        if (!description || description.includes('Enjoy the videos and music')) {
+          description = `Music video by ${authorName} performing "${title}".`;
         }
         
-        console.log(`[fetchYouTubeMetadata] Success via oEmbed:`, { title, description });
+        console.log(`[fetchYouTubeMetadata] Success via oEmbed:`, { title, description: description ? `${description.substring(0, 50)}...` : 'none' });
         return {
           title,
-          description: description || `YouTube video by ${data.author_name}`,
+          description,
           image: thumbnailUrl,
           favicon: 'https://www.youtube.com/favicon.ico'
         };
@@ -194,10 +168,10 @@ async function fetchYouTubeMetadata(url: string): Promise<{ title?: string; desc
       console.log('[fetchYouTubeMetadata] oEmbed failed, trying alternative methods');
     }
     
-   
+    // Fallback: Try to scrape the YouTube page for description
     try {
-      const embedUrl = `https://www.youtube.com/embed/${videoId}`;
-      const response = await fetch(embedUrl, {
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const response = await fetch(youtubeUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
@@ -207,16 +181,34 @@ async function fetchYouTubeMetadata(url: string): Promise<{ title?: string; desc
         const html = await response.text();
         const $ = cheerio.load(html);
         
-        const title = $('title').text().replace(' - YouTube', '').trim();
-        let description = $('meta[name="description"]').attr('content');
+        const title = $('meta[property="og:title"]').attr('content') || 
+                     $('title').text().replace(' - YouTube', '').trim();
         
-       
-        if (description && description.includes('Enjoy the videos and music you love')) {
-       
-          description = `YouTube video${title ? `: ${title}` : ''}`;
+        let description = $('meta[property="og:description"]').attr('content') ||
+                         $('meta[name="description"]').attr('content');
+        
+        // Clean up description to remove generic YouTube text
+        if (description && description.includes('Enjoy the videos and music')) {
+          // Try to extract from JSON-LD
+          try {
+            const jsonLdScript = $('script[type="application/ld+json"]').html();
+            if (jsonLdScript) {
+              const jsonLd = JSON.parse(jsonLdScript);
+              if (jsonLd && jsonLd.description && !jsonLd.description.includes('Enjoy the videos')) {
+                description = jsonLd.description;
+              }
+            }
+          } catch (e) {
+            console.log('Could not parse JSON-LD for description');
+          }
         }
         
-        console.log(`[fetchYouTubeMetadata] Success via embed:`, { title, description: description ? `${description.substring(0, 50)}...` : 'none' });
+        // Final fallback for description
+        if (!description || description.includes('Enjoy the videos and music')) {
+          description = `Watch "${title}" on YouTube`;
+        }
+        
+        console.log(`[fetchYouTubeMetadata] Success via direct scrape:`, { title, description: description ? `${description.substring(0, 50)}...` : 'none' });
         return {
           title,
           description,
@@ -224,40 +216,14 @@ async function fetchYouTubeMetadata(url: string): Promise<{ title?: string; desc
           favicon: 'https://www.youtube.com/favicon.ico'
         };
       }
-    } catch (embedError) {
-      console.log('[fetchYouTubeMetadata] Embed method failed');
+    } catch (scrapeError) {
+      console.log('[fetchYouTubeMetadata] Direct scrape failed');
     }
     
-
-    try {
-     
-      const microlinkUrl = `https://api.microlink.io?url=${encodeURIComponent(url)}&audio=false&video=false&screenshot=false`;
-      const response = await safeFetch(microlinkUrl, {}, 5000);
-
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.status === 'success') {
-          console.log(`[fetchYouTubeMetadata] Success via microlink:`, { 
-            title: data.data.title, 
-            description: data.data.description ? `${data.data.description.substring(0, 50)}...` : 'none' 
-          });
-          return {
-            title: data.data.title,
-            description: data.data.description,
-            image: data.data.image?.url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-            favicon: 'https://www.youtube.com/favicon.ico'
-          };
-        }
-      }
-    } catch (proxyError) {
-      console.log('[fetchYouTubeMetadata] Proxy method failed');
-    }
-    
-  
+    // Final fallback: Construct basic info from video ID
     console.log('[fetchYouTubeMetadata] Using fallback metadata');
     return {
-      title: `YouTube Video (${videoId})`,
+      title: `YouTube Video`,
       description: 'Watch this video on YouTube',
       image: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
       favicon: 'https://www.youtube.com/favicon.ico'
@@ -269,7 +235,54 @@ async function fetchYouTubeMetadata(url: string): Promise<{ title?: string; desc
   }
 }
 
+// Helper function to extract YouTube description
+async function getYouTubeDescription(videoId: string): Promise<string | undefined> {
+  try {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    
+    if (response.ok) {
+      const html = await response.text();
+      const $ = cheerio.load(html);
+      
+      // Try multiple methods to extract description
+      let description = $('meta[property="og:description"]').attr('content') ||
+                       $('meta[name="description"]').attr('content');
+      
+      // Try to extract from JSON-LD
+      if (!description || description.includes('Enjoy the videos and music')) {
+        try {
+          const jsonLdScript = $('script[type="application/ld+json"]').html();
+          if (jsonLdScript) {
+            const jsonLd = JSON.parse(jsonLdScript);
+            if (jsonLd && jsonLd.description && !jsonLd.description.includes('Enjoy the videos')) {
+              description = jsonLd.description;
+            }
+          }
+        } catch (e) {
+          console.log('Could not parse JSON-LD for description');
+        }
+      }
+      
+      // Clean up description
+      if (description && description.includes('Enjoy the videos and music')) {
+        return undefined;
+      }
+      
+      return description;
+    }
+  } catch (error) {
+    console.error('Error fetching YouTube description:', error);
+  }
+  
+  return undefined;
+}
 
+// Helper function to extract YouTube video ID
 function getYouTubeVideoId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
