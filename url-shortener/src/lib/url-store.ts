@@ -7,12 +7,15 @@ export interface UrlData {
   description?: string
   image?: string
   favicon?: string
+  lastFetched?: number // Add timestamp for cache management
 }
 
 export interface UrlStorage {
   codeToUrl: Record<string, UrlData>
   urlToCode: Record<string, string>
 }
+
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes cache
 
 // Vercel KV functions
 export async function getUrlFromKV(shortCode: string): Promise<UrlData | null> {
@@ -36,6 +39,12 @@ export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   const missingCore = !data.title && !data.description && !data.image;
   
   return genericTitle || genericDescription || googleFavicon || missingCore;
+}
+
+// Check if cache is stale
+export function isCacheStale(data?: UrlData | null): boolean {
+  if (!data || !data.lastFetched) return true;
+  return Date.now() - data.lastFetched > CACHE_DURATION;
 }
 
 // Function to detect and filter generic descriptions
@@ -66,12 +75,39 @@ function isGenericDescription(desc?: string): boolean {
 export async function updateUrlData(shortCode: string, partial: Partial<UrlData>): Promise<UrlData | null> {
   const existing = await getUrlFromKV(shortCode);
   if (!existing) return null;
+  
   const merged: UrlData = {
     ...existing,
     ...partial,
+    lastFetched: Date.now(), // Update timestamp
   };
+  
   await saveUrlToKV(shortCode, merged);
   return merged;
+}
+
+// New function to refresh metadata
+export async function refreshMetadata(shortCode: string): Promise<UrlData | null> {
+  const existing = await getUrlFromKV(shortCode);
+  if (!existing) return null;
+
+  console.log(`Refreshing metadata for ${shortCode}: ${existing.originalUrl}`);
+  
+  try {
+    const freshMetadata = await fetchPageMetadata(existing.originalUrl);
+    const updated: UrlData = {
+      ...existing,
+      ...freshMetadata,
+      lastFetched: Date.now(),
+    };
+    
+    await saveUrlToKV(shortCode, updated);
+    console.log(`Updated metadata for ${shortCode}:`, updated);
+    return updated;
+  } catch (error) {
+    console.error(`Error refreshing metadata for ${shortCode}:`, error);
+    return existing;
+  }
 }
 
 function normalizeUrl(url: string): string {
@@ -111,7 +147,15 @@ export async function getOriginalUrl(shortCode: string): Promise<string | null> 
 }
 
 export async function getUrl(shortCode: string): Promise<UrlData | null> {
-  return await getUrlFromKV(shortCode);
+  const data = await getUrlFromKV(shortCode);
+  
+  // If data exists but cache is stale or metadata is weak, refresh it
+  if (data && (isCacheStale(data) || isWeakMetadata(data))) {
+    console.log(`Cache stale or weak metadata for ${shortCode}, refreshing...`);
+    return await refreshMetadata(shortCode);
+  }
+  
+  return data;
 }
 
 export async function createShortCode(url: string, metadata?: Partial<UrlData>): Promise<string> {
@@ -128,6 +172,11 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     // Verify the short code still exists in KV
     const existingData = await getUrlFromKV(existingShortCode);
     if (existingData) {
+      // If cache is stale or metadata is weak, refresh it
+      if (isCacheStale(existingData) || isWeakMetadata(existingData)) {
+        console.log(`Refreshing existing URL metadata for ${existingShortCode}`);
+        await refreshMetadata(existingShortCode);
+      }
       return existingShortCode;
     }
   }
@@ -146,29 +195,26 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   } while (await getUrlFromKV(shortCode)); // Check uniqueness against KV
 
-  // Enhanced metadata extraction with better YouTube handling
+  // Always fetch fresh metadata for new URLs
   let enhancedMetadata = metadata || {};
   
-  // If metadata is weak or missing, try to fetch better metadata
-  if (isWeakMetadata(metadata)) {
-    try {
-      console.log(`Fetching enhanced metadata for: ${url}`);
-      const fetchedMetadata = await fetchPageMetadata(url);
-      
-      // Filter out generic descriptions
-      if (fetchedMetadata.description && isGenericDescription(fetchedMetadata.description)) {
-        fetchedMetadata.description = undefined;
-      }
-      
-      // Filter out generic titles
-      if (fetchedMetadata.title && isGenericDescription(fetchedMetadata.title)) {
-        fetchedMetadata.title = undefined;
-      }
-      
-      enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
-    } catch (error) {
-      console.error('Error fetching enhanced metadata:', error);
+  try {
+    console.log(`Fetching fresh metadata for new URL: ${url}`);
+    const fetchedMetadata = await fetchPageMetadata(url);
+    
+    // Filter out generic descriptions
+    if (fetchedMetadata.description && isGenericDescription(fetchedMetadata.description)) {
+      fetchedMetadata.description = undefined;
     }
+    
+    // Filter out generic titles
+    if (fetchedMetadata.title && isGenericDescription(fetchedMetadata.title)) {
+      fetchedMetadata.title = undefined;
+    }
+    
+    enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
+  } catch (error) {
+    console.error('Error fetching enhanced metadata:', error);
   }
 
   // Special handling for YouTube URLs to ensure dynamic descriptions
@@ -187,13 +233,14 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     console.error('Error in YouTube-specific handling:', error);
   }
 
-  // Store the data in KV
+  // Store the data in KV with timestamp
   const urlData: UrlData = {
     originalUrl: url,
     title: enhancedMetadata?.title,
     description: enhancedMetadata?.description,
     image: enhancedMetadata?.image,
     favicon: enhancedMetadata?.favicon,
+    lastFetched: Date.now(),
   }
   
   await saveUrlToKV(shortCode, urlData);

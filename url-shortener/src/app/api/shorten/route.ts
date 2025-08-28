@@ -1,13 +1,10 @@
-
 import { NextRequest, NextResponse } from "next/server"
-import { createShortCode, getUrl, getAllUrls } from "@/lib/url-store"
+import { createShortCode, getUrl, getAllUrls, refreshMetadata, isCacheStale } from "@/lib/url-store"
 import { kv } from "@vercel/kv";
-import { fetchPageMetadata } from "@/lib/utils"; // Import fetchPageMetadata
+import { fetchPageMetadata } from "@/lib/utils";
 import { isWeakMetadata, updateUrlData } from "@/lib/url-store";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
-
-// Removed the extractMetadata function, as it's now handled by fetchPageMetadata in utils.ts
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,26 +32,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-
     try {
       const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`)
       
       if (existingShortCode) {
         const existingData = await getUrl(existingShortCode);
-        // If existing metadata is weak or user forces refresh, try to re-scrape and update
-        if (force || isWeakMetadata(existingData)) {
+        
+        // Always refresh if forced, cache is stale, or metadata is weak
+        if (force || isCacheStale(existingData) || isWeakMetadata(existingData)) {
           try {
             console.log(`[shorten] Refreshing metadata for existing URL: ${normalizedUrl}`);
-            const fresh = await fetchPageMetadata(normalizedUrl);
-            const improved = await updateUrlData(existingShortCode, fresh);
+            const refreshed = await refreshMetadata(existingShortCode);
             return NextResponse.json({
               shortCode: existingShortCode,
-              metadata: improved ?? existingData
+              metadata: refreshed ?? existingData
             });
           } catch (refreshError) {
             console.error('Error refreshing metadata for existing URL:', refreshError);
           }
         }
+        
         return NextResponse.json({
           shortCode: existingShortCode,
           metadata: existingData
@@ -62,18 +59,21 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       console.error('Error checking existing URL:', error);
-     
     }
 
+    // For new URLs, always fetch fresh metadata
+    console.log(`[shorten] Creating new short code for: ${normalizedUrl}`);
+    const metadata = await fetchPageMetadata(normalizedUrl);
     
-    const metadata = await fetchPageMetadata(normalizedUrl); // Use fetchPageMetadata
-    
-    // Create short code
+    // Create short code with fresh metadata
     const shortCode = await createShortCode(normalizedUrl, metadata);
+    
+    // Get the final stored data to return
+    const finalData = await getUrl(shortCode);
     
     return NextResponse.json({
       shortCode,
-      metadata
+      metadata: finalData
     });
     
   } catch (error) {
