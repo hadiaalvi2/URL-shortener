@@ -167,16 +167,16 @@ function extractMetadataFromHTML(html: string): {
   
   const descriptionPatterns = [
     // Most comprehensive pattern for full description
-    /"videoDetails":\s*{[^{}]*?"shortDescription":\s*"([^"]*(?:\\.[^"]*)*)"/s,
+    /"videoDetails":\s*{[^{}]*?"shortDescription":\s*"([^"]*(?:\\.[^"]*)*)"/,
     // Alternative videoDetails pattern
-    /"shortDescription":\s*"([^"]*(?:\\.[^"]*)*)"/s,
+    /"shortDescription":\s*"([^"]*(?:\\.[^"]*)*)"/,
     // JSON-LD structured data
-    /"description":\s*"([^"]*(?:\\.[^"]*)*)"/s,
+    /"description":\s*"([^"]*(?:\\.[^"]*)*)"/,
     // Meta tags as fallback
     /<meta property="og:description" content="([^"]+)"/,
     /<meta name="description" content="([^"]+)"/,
     // Try to find description in runs array
-    /"description":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([^"]*(?:\\.[^"]*)*)"/s
+    /"description":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([^"]*(?:\\.[^"]*)*)"/
   ];
   
   // Extract title
@@ -192,7 +192,7 @@ function extractMetadataFromHTML(html: string): {
   for (const pattern of descriptionPatterns) {
     const match = html.match(pattern);
     if (match && match[1]) {
-      let rawDesc = match[1];
+      const rawDesc = match[1]; // Fixed: using const instead of let
       
       // Handle multiline descriptions better
       const cleanDesc = cleanYouTubeString(rawDesc);
@@ -232,15 +232,19 @@ function extractMetadataFromHTML(html: string): {
   };
 }
 
-function extractDescriptionFromYtData(data: any): string | undefined {
+function extractDescriptionFromYtData(data: Record<string, unknown>): string | undefined {
   try {
     // Navigate YouTube's complex data structure
-    const contents = data?.contents?.twoColumnWatchNextResults?.results?.results?.contents;
+    const contents = (data?.contents as Record<string, unknown>)
+      ?.twoColumnWatchNextResults as Record<string, unknown>;
+    const results = (contents?.results as Record<string, unknown>)
+      ?.results as Record<string, unknown>;
+    const contentsArray = results?.contents as Array<Record<string, unknown>>;
     
-    if (contents && Array.isArray(contents)) {
-      for (const content of contents) {
+    if (contentsArray && Array.isArray(contentsArray)) {
+      for (const content of contentsArray) {
         // Look for video secondary info renderer
-        const secondaryInfo = content?.videoSecondaryInfoRenderer;
+        const secondaryInfo = content?.videoSecondaryInfoRenderer as Record<string, unknown>;
         if (secondaryInfo?.description) {
           const desc = extractTextFromRuns(secondaryInfo.description);
           if (desc && desc.length > 50) {
@@ -249,8 +253,8 @@ function extractDescriptionFromYtData(data: any): string | undefined {
         }
         
         // Also check primary info
-        const primaryInfo = content?.videoPrimaryInfoRenderer;
-        if (primaryInfo?.videoActions?.menuRenderer?.topLevelButtons) {
+        const primaryInfo = content?.videoPrimaryInfoRenderer as Record<string, unknown>;
+        if (primaryInfo?.videoActions) {
           // Sometimes description is nested deeper
           continue;
         }
@@ -258,8 +262,9 @@ function extractDescriptionFromYtData(data: any): string | undefined {
     }
     
     // Try alternative structure
-    if (data?.videoDetails?.shortDescription) {
-      return cleanYouTubeString(data.videoDetails.shortDescription);
+    const videoDetails = data?.videoDetails as Record<string, unknown>;
+    if (videoDetails?.shortDescription && typeof videoDetails.shortDescription === 'string') {
+      return cleanYouTubeString(videoDetails.shortDescription);
     }
     
   } catch (error) {
@@ -269,11 +274,13 @@ function extractDescriptionFromYtData(data: any): string | undefined {
   return undefined;
 }
 
-function extractTextFromRuns(descriptionObj: any): string | undefined {
+function extractTextFromRuns(descriptionObj: unknown): string | undefined {
   try {
-    if (descriptionObj?.runs && Array.isArray(descriptionObj.runs)) {
-      return descriptionObj.runs
-        .map((run: any) => run.text || '')
+    const desc = descriptionObj as Record<string, unknown>;
+    
+    if (desc?.runs && Array.isArray(desc.runs)) {
+      return desc.runs
+        .map((run: Record<string, unknown>) => (run.text as string) || '')
         .join('')
         .trim();
     }
@@ -282,8 +289,8 @@ function extractTextFromRuns(descriptionObj: any): string | undefined {
       return descriptionObj.trim();
     }
     
-    if (descriptionObj?.simpleText) {
-      return descriptionObj.simpleText.trim();
+    if (desc?.simpleText && typeof desc.simpleText === 'string') {
+      return desc.simpleText.trim();
     }
     
   } catch (error) {
