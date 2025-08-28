@@ -6,8 +6,218 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export async function fetchYouTubeMetadata(url: string): Promise<{
+  title?: string;
+  description?: string;
+  image?: string;
+  favicon?: string;
+}> {
+  try {
+    const parsedUrl = new URL(url);
+    
+    // Extract video ID from different YouTube URL formats
+    let videoId: string | null = null;
+    if (parsedUrl.hostname.includes('youtube.com')) {
+      videoId = parsedUrl.searchParams.get('v');
+    } else if (parsedUrl.hostname === 'youtu.be') {
+      videoId = parsedUrl.pathname.slice(1);
+    }
+    
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL - no video ID found');
+    }
+    
+    console.log(`[fetchYouTubeMetadata] Extracting metadata for video ID: ${videoId}`);
+    
+    // Method 1: Try oEmbed API (official but limited)
+    try {
+      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+      const oembedResponse = await fetch(oembedUrl);
+      
+      if (oembedResponse.ok) {
+        const oembedData = await oembedResponse.json();
+        // oEmbed doesn't provide description, so we'll scrape for it
+        const scrapedDescription = await scrapeYouTubeDescription(url);
+        
+        return {
+          title: oembedData.title,
+          description: scrapedDescription,
+          image: oembedData.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+          favicon: 'https://www.youtube.com/favicon.ico'
+        };
+      }
+    } catch (oembedError) {
+      console.error('oEmbed method failed:', oembedError);
+    }
+    
+    // Method 2: Fallback to page scraping
+    return await scrapeYouTubePage(url, videoId);
+    
+  } catch (error) {
+    console.error('Error in fetchYouTubeMetadata:', error);
+    return {};
+  }
+}
+
+async function scrapeYouTubeDescription(url: string): Promise<string | undefined> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      }
+    });
+    
+    if (!response.ok) return undefined;
+    
+    const html = await response.text();
+    
+    // Multiple patterns to extract description, ordered by reliability
+    const patterns = [
+      // Primary patterns for video description
+      /"videoDetails":\s*{[^{}]*"shortDescription":"([^"]*(?:\\.[^"]*)*)"/,
+      /"shortDescription":"([^"]*(?:\\.[^"]*)*)"/,
+      // Fallback patterns
+      /"description":\s*{[^{}]*"simpleText":"([^"]*(?:\\.[^"]*)*)"/,
+      /"description":"([^"]*(?:\\.[^"]*)*)"/,
+      // Meta tag fallback
+      /<meta property="og:description" content="([^"]+)"/,
+      /<meta name="description" content="([^"]+)"/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        let description = decodeYouTubeString(match[1]).trim();
+        
+        // Filter out generic descriptions and ensure minimum quality
+        if (!isGenericYouTubeDescription(description) && description.length >= 20) {
+          // Truncate very long descriptions for preview
+          if (description.length > 300) {
+            description = description.substring(0, 297) + '...';
+          }
+          return description;
+        }
+      }
+    }
+    
+    return undefined;
+  } catch (error) {
+    console.error('Error scraping YouTube description:', error);
+    return undefined;
+  }
+}
+
+async function scrapeYouTubePage(url: string, videoId: string): Promise<{
+  title?: string;
+  description?: string;
+  image?: string;
+  favicon?: string;
+}> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const html = await response.text();
+    
+    // Extract title with priority order
+    let title = extractMetaContent(html, /"videoDetails":\s*{[^{}]*"title":"([^"]*(?:\\.[^"]*)*)"/) ||
+               extractMetaContent(html, /"title":"([^"]*(?:\\.[^"]*)*)"/) ||
+               extractMetaContent(html, /<meta property="og:title" content="([^"]+)"/) ||
+               extractMetaContent(html, /<title>([^<]+)<\/title>/);
+    
+    // Extract description using the same function as scrapeYouTubeDescription
+    const description = await scrapeYouTubeDescription(url);
+    
+    // Clean up title
+    if (title) {
+      title = decodeYouTubeString(title).replace(/ - YouTube$/, '').trim();
+    }
+    
+    return {
+      title,
+      description,
+      image: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+      favicon: 'https://www.youtube.com/favicon.ico'
+    };
+    
+  } catch (error) {
+    console.error('Error scraping YouTube page:', error);
+    return {
+      image: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+      favicon: 'https://www.youtube.com/favicon.ico'
+    };
+  }
+}
+
+function extractMetaContent(html: string, pattern: RegExp): string | undefined {
+  const match = html.match(pattern);
+  return match ? match[1] : undefined;
+}
+
+function decodeYouTubeString(str: string): string {
+  return str
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => 
+      String.fromCharCode(parseInt(code, 16))
+    );
+}
+
+function isGenericYouTubeDescription(description: string): boolean {
+  if (!description || description.length < 10) return true;
+  
+  const generic = [
+    'enjoy the videos and music you love',
+    'upload original content',
+    'share it all with friends',
+    'created using youtube',
+    'this video is unavailable',
+    'video unavailable',
+    'private video',
+    'deleted video',
+    'watch this video on youtube',
+    'subscribe to our channel',
+    'like and subscribe'
+  ];
+  
+  const lowerDesc = description.toLowerCase().trim();
+  return generic.some(pattern => lowerDesc.includes(pattern));
+}
+
 export async function fetchPageMetadata(url: string) {
   console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`);
+  
+  // Check if it's a YouTube URL and use specialized extraction
+  try {
+    const parsedUrl = new URL(url);
+    const isYouTube = parsedUrl.hostname.includes('youtube.com') || parsedUrl.hostname === 'youtu.be';
+    
+    if (isYouTube) {
+      console.log(`[fetchPageMetadata] Detected YouTube URL, using specialized extraction`);
+      const youtubeMetadata = await fetchYouTubeMetadata(url);
+      if (youtubeMetadata.title || youtubeMetadata.description) {
+        console.log(`[fetchPageMetadata] Successfully extracted YouTube metadata:`, youtubeMetadata);
+        return youtubeMetadata;
+      }
+    }
+  } catch (urlError) {
+    console.error('Error parsing URL for YouTube detection:', urlError);
+  }
+  
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10 seconds
@@ -156,62 +366,7 @@ export async function fetchPageMetadata(url: string) {
         $("link[rel='shortcut icon']").attr("href") ||
         $("link[rel='apple-touch-icon']").attr("href") ||
         $("link[rel='apple-touch-icon-precomposed']").attr("href");
-      // YouTube specific: override generic site description with actual video shortDescription
-      try {
-        const ytUrl = new URL(effectiveUrl);
-        const isYouTube = /(^|\.)youtube\.com$/.test(ytUrl.hostname) || ytUrl.hostname === "youtu.be";
-        if (isYouTube) {
-          const isGeneric = !description || description.toLowerCase().includes("enjoy the videos and music you love");
 
-          const pickShortDesc = (text: string): string | undefined => {
-            const m = text.match(/\"shortDescription\":\"([\s\S]*?)\"/);
-            if (m && m[1]) {
-              const unescaped = m[1]
-                .replace(/\\n/g, " \u2028 ")
-                .replace(/\\"/g, '"')
-                .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
-                .replace(/\s+/g, ' ')
-                .trim();
-              return unescaped;
-            }
-            return undefined;
-          };
-
-          // Try from original HTML first
-          let shortDesc = pickShortDesc(html);
-
-          // If not found, fetch a readable copy via Jina reader using the canonical watch URL
-          if (!shortDesc || shortDesc.length < 10 || isGeneric) {
-            // Extract video id from url
-            let vid: string | undefined = ytUrl.searchParams.get('v') || undefined;
-            if (!vid && ytUrl.hostname === 'youtu.be') {
-              const parts = ytUrl.pathname.split('/').filter(Boolean);
-              vid = parts[0];
-            }
-            if (vid) {
-              const jinaTargets = [
-                `https://r.jina.ai/https://www.youtube.com/watch?v=${vid}`,
-                `https://r.jina.ai/http://www.youtube.com/watch?v=${vid}`,
-                `https://r.jina.ai/https://m.youtube.com/watch?v=${vid}`,
-              ];
-              for (const jt of jinaTargets) {
-                try {
-                  const jr = await fetch(jt, { cache: 'no-store' });
-                  if (jr.ok) {
-                    const jtHtml = await jr.text();
-                    shortDesc = pickShortDesc(jtHtml) || cheerio.load(jtHtml)("meta[name='description']").attr('content') || shortDesc;
-                    if (shortDesc && shortDesc.length > 10) break;
-                  }
-                } catch {}
-              }
-            }
-          }
-
-          if (shortDesc && (isGeneric || shortDesc.length > (description?.length || 0))) {
-            description = shortDesc;
-          }
-        }
-      } catch {}
     } catch (e) {
         console.error('[fetchPageMetadata] Error loading HTML with Cheerio or parsing meta tags:', e);
     }
@@ -283,47 +438,6 @@ export async function fetchPageMetadata(url: string) {
       }
     }
 
-    // AMP page fallback for commerce/publisher sites
-    try {
-      if (!image || !title || !description) {
-        const $h = cheerio.load(html);
-        const ampHref = $h("link[rel='amphtml']").attr("href");
-        if (ampHref) {
-          const ampUrl = new URL(ampHref, new URL(effectiveUrl).origin).toString();
-          console.log(`[fetchPageMetadata] Fetching AMP page: ${ampUrl}`);
-          const ampRes = await fetch(ampUrl, { cache: "no-store" });
-          if (ampRes.ok) {
-            const ampHtml = await ampRes.text();
-            const $a = cheerio.load(ampHtml);
-            title = title || $a("meta[property='og:title']").attr("content") || $a("head title").text().trim();
-            description = description ||
-              $a("meta[property='og:description']").attr("content") ||
-              $a("meta[name='description']").attr("content");
-            image = image ||
-              $a("meta[property='og:image']").attr("content") ||
-              $a("meta[name='twitter:image']").attr("content");
-          }
-        }
-      }
-    } catch (ampErr) {
-      console.warn('[fetchPageMetadata] AMP fallback failed:', ampErr);
-    }
-
-    // YouTube thumbnail heuristic
-    try {
-      const u = new URL(effectiveUrl);
-      if ((!image || image.length === 0) && (u.hostname.endsWith("youtube.com") || u.hostname === "youtu.be")) {
-        let vid = u.searchParams.get("v");
-        if (!vid) {
-          const parts = u.pathname.split("/").filter(Boolean);
-          vid = parts[0];
-        }
-        if (vid) {
-          image = `https://img.youtube.com/vi/${vid}/maxresdefault.jpg`;
-        }
-      }
-    } catch {}
-
     // Final pass: provide a sensible favicon fallback via Google S2 service
     try {
       const baseForFavicon = new URL(url);
@@ -331,27 +445,6 @@ export async function fetchPageMetadata(url: string) {
         favicon = `https://www.google.com/s2/favicons?domain=${baseForFavicon.hostname}&sz=128`;
       }
     } catch {}
-
-    // External service fallback (optional): Microlink
-    try {
-      if ((!title && !description && !image) || !image) {
-        const apiKey = process.env.MICROLINK_API_KEY;
-        if (apiKey) {
-          const mUrl = `https://pro.microlink.io/?url=${encodeURIComponent(url)}&audio=false&video=false&iframe=false&screenshot=false`;
-          const mRes = await fetch(mUrl, { headers: { 'x-api-key': apiKey }, cache: 'no-store' });
-          if (mRes.ok) {
-            const json = await mRes.json();
-            const data = json && json.data ? json.data : {};
-            title = title || data.title;
-            description = description || data.description;
-            image = image || (data.image && (data.image.url || data.image.src));
-            favicon = favicon || (data.logo && (data.logo.url || data.logo.src));
-          }
-        }
-      }
-    } catch (svcErr) {
-      console.warn('[fetchPageMetadata] Microlink fallback failed or not configured:', svcErr);
-    }
 
     const metadata = {
       title: title || undefined,

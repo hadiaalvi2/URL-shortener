@@ -27,16 +27,27 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     const original = data.originalUrl ? new URL(data.originalUrl) : null
 
-    // If stored metadata is weak or missing description, try fetching a fresh one
+    // Enhanced metadata refresh for YouTube URLs or weak metadata
     try {
-      if (!data.description || isWeakMetadata(data)) {
-        const fresh = await fetchPageMetadata(data.originalUrl)
-        const improved = await updateUrlData(shortCode, fresh)
-        if (improved) {
-          data = improved
+      const isYouTube = original?.hostname.includes('youtube.com') || original?.hostname === 'youtu.be';
+      
+      if (!data.description || isWeakMetadata(data) || (isYouTube && !data.description)) {
+        console.log(`[generateMetadata] Refreshing metadata for ${shortCode}`);
+        const fresh = await fetchPageMetadata(data.originalUrl);
+        
+        // Only update if we got meaningful improvements
+        if (fresh.title || fresh.description) {
+          const improved = await updateUrlData(shortCode, fresh);
+          if (improved) {
+            data = improved;
+            console.log(`[generateMetadata] Successfully refreshed metadata for ${shortCode}`);
+          }
         }
       }
-    } catch {}
+    } catch (refreshError) {
+      console.error('Error refreshing metadata in generateMetadata:', refreshError);
+    }
+    
     const domainFallback = original ? original.hostname : undefined
     const title = data.title || domainFallback
     // Never include URL in description - only use actual description or title
@@ -119,16 +130,27 @@ export default async function RedirectPage(props: Props) {
       let description = data.description || undefined
       let imageUrl = data.image
 
-      // Opportunistically refresh weak/missing metadata for previews
+      // Enhanced opportunistic refresh for social media bots
       try {
-        if (!description || isWeakMetadata(data)) {
-          const fresh = await fetchPageMetadata(data.originalUrl)
-          title = fresh.title || title
-          description = fresh.description || description
-          imageUrl = fresh.image || imageUrl
-          await updateUrlData(shortCode, fresh)
+        const isYouTube = domain.includes('youtube.com') || domain === 'youtu.be';
+        
+        if (!description || isWeakMetadata(data) || (isYouTube && (!description || description.length < 50))) {
+          console.log(`[RedirectPage] Bot detected, refreshing metadata for ${shortCode}`);
+          const fresh = await fetchPageMetadata(data.originalUrl);
+          
+          if (fresh.title || fresh.description) {
+            title = fresh.title || title;
+            description = fresh.description || description;
+            imageUrl = fresh.image || imageUrl;
+            
+            // Update stored data for future requests
+            await updateUrlData(shortCode, fresh);
+            console.log(`[RedirectPage] Successfully refreshed bot metadata for ${shortCode}`);
+          }
         }
-      } catch {}
+      } catch (refreshError) {
+        console.error('Error refreshing metadata for bot:', refreshError);
+      }
 
       return (
         <html>

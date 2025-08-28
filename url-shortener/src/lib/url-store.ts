@@ -26,7 +26,7 @@ export async function saveUrlToKV(shortCode: string, data: UrlData) {
   await kv.set(`url:${shortCode}`, data)
 }
 
-// Enhanced function to detect generic metadata
+// Enhanced function to detect generic metadata with YouTube-specific patterns
 export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   if (!data) return true;
   
@@ -38,7 +38,7 @@ export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   return genericTitle || genericDescription || googleFavicon || missingCore;
 }
 
-// Function to detect and filter generic descriptions
+// Enhanced function to detect and filter generic descriptions including YouTube patterns
 function isGenericDescription(desc?: string): boolean {
   if (!desc) return true;
   
@@ -55,9 +55,21 @@ function isGenericDescription(desc?: string): boolean {
     /shared (link|content)/i,
     /default (description|title)/i,
     /^[\W\s]*$/, // Only special characters or whitespace
+    // Enhanced YouTube-specific generic patterns
+    /enjoy the videos and music you love/i,
+    /upload original content/i,
+    /share it all with friends/i,
+    /created using youtube/i,
+    /this video is unavailable/i,
+    /video unavailable/i,
+    /private video/i,
+    /deleted video/i,
+    /watch this video on youtube/i,
+    /subscribe to our channel/i,
+    /like and subscribe/i,
   ];
   
-  const isTooShort = desc.trim().length < 25;
+  const isTooShort = desc.trim().length < 20; // Increased minimum length for better quality
   const isGeneric = genericPatterns.some(pattern => pattern.test(desc.trim()));
   
   return isTooShort || isGeneric;
@@ -128,6 +140,26 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     // Verify the short code still exists in KV
     const existingData = await getUrlFromKV(existingShortCode);
     if (existingData) {
+      // For YouTube URLs, always try to refresh if metadata is weak
+      const urlObj = new URL(normalizedUrl);
+      const isYouTube = urlObj.hostname.includes('youtube.com') || urlObj.hostname === 'youtu.be';
+      
+      if (isYouTube && (isWeakMetadata(existingData) || !existingData.description)) {
+        try {
+          console.log(`[createShortCode] Refreshing YouTube metadata for existing URL`);
+          const freshMetadata = await fetchPageMetadata(normalizedUrl); // This will use fetchYouTubeMetadata
+          if (freshMetadata.description || freshMetadata.title) {
+            const updated = await updateUrlData(existingShortCode, freshMetadata);
+            if (updated) {
+              console.log(`[createShortCode] Successfully updated existing YouTube metadata`);
+              return existingShortCode;
+            }
+          }
+        } catch (error) {
+          console.error('Error refreshing YouTube metadata:', error);
+        }
+      }
+      
       return existingShortCode;
     }
   }
@@ -171,22 +203,6 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   }
 
-  // Special handling for YouTube URLs to ensure dynamic descriptions
-  try {
-    const urlObj = new URL(normalizedUrl);
-    const isYouTube = urlObj.hostname.includes('youtube.com') || urlObj.hostname === 'youtu.be';
-    
-    if (isYouTube && (!enhancedMetadata.description || isGenericDescription(enhancedMetadata.description))) {
-      // Try to extract better YouTube description
-      const youtubeDescription = await extractYouTubeDescription(normalizedUrl);
-      if (youtubeDescription && !isGenericDescription(youtubeDescription)) {
-        enhancedMetadata.description = youtubeDescription;
-      }
-    }
-  } catch (error) {
-    console.error('Error in YouTube-specific handling:', error);
-  }
-
   // Store the data in KV
   const urlData: UrlData = {
     originalUrl: url,
@@ -200,64 +216,6 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   await kv.set(`url_to_code:${normalizedUrl}`, shortCode); // Store reverse mapping for efficient lookup
 
   return shortCode;
-}
-
-// Enhanced YouTube description extraction
-async function extractYouTubeDescription(url: string): Promise<string | undefined> {
-  try {
-    console.log(`Extracting YouTube description for: ${url}`);
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    
-    const html = await response.text();
-    
-    // Multiple extraction strategies for YouTube
-    const extractionPatterns = [
-      /"description":"([^"]+)"/,
-      /"shortDescription":"([^"]+)"/,
-      /"videoDescription":"([^"]+)"/,
-      /<meta name="description" content="([^"]+)">/,
-      /"content":"([^"]{50,500})"/ // General content extraction
-    ];
-    
-    for (const pattern of extractionPatterns) {
-      const match = html.match(pattern);
-      if (match && match[1]) {
-        const description = match[1]
-          .replace(/\\n/g, ' ')
-          .replace(/\\"/g, '"')
-          .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
-          .trim();
-        
-        if (description && description.length > 30 && !isGenericDescription(description)) {
-          console.log(`Found YouTube description: ${description.substring(0, 100)}...`);
-          return description;
-        }
-      }
-    }
-    
-    // Fallback: Extract from JSON-LD
-    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-    if (jsonLdMatch) {
-      try {
-        const jsonData = JSON.parse(jsonLdMatch[1]);
-        const description = jsonData?.description || jsonData?.videoDescription;
-        if (description && !isGenericDescription(description)) {
-          return description;
-        }
-      } catch (e) {
-        console.error('Error parsing JSON-LD:', e);
-      }
-    }
-    
-  } catch (error) {
-    console.error('Error extracting YouTube description:', error);
-  }
-  
-  return undefined;
 }
 
 export async function getAllUrls(): Promise<Record<string, string>> {
