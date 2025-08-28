@@ -156,23 +156,21 @@ export async function fetchPageMetadata(url: string) {
         $("link[rel='shortcut icon']").attr("href") ||
         $("link[rel='apple-touch-icon']").attr("href") ||
         $("link[rel='apple-touch-icon-precomposed']").attr("href");
-      // YouTube specific: override generic site description with actual video shortDescription
+      // YouTube specific: extract real video description from inline JSON
       try {
-        const ytHost = new URL(effectiveUrl).hostname;
-        const isYouTube = /(^|\.)youtube\.com$/.test(ytHost) || ytHost === "youtu.be";
+        const isYouTube = /(^|\.)youtube\.com$/.test(new URL(effectiveUrl).hostname) || new URL(effectiveUrl).hostname === "youtu.be";
         if (isYouTube) {
-          const isGeneric = !description || description.toLowerCase().includes("enjoy the videos and music you love");
-
-          const match = html.match(/\"shortDescription\":\"([\s\S]*?)\"/);
-          if (match && match[1]) {
-            const unescaped = match[1]
-              .replace(/\\n/g, "\n")
-              .replace(/\\"/g, '"')
-              .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
-              .trim();
-            if (unescaped && (isGeneric || unescaped.length > (description?.length || 0))) {
-              // collapse excessive whitespace
-              description = unescaped.replace(/\s+/g, ' ').trim();
+          if (!description) {
+            const match = html.match(/\"shortDescription\":\"([\s\S]*?)\"/);
+            if (match && match[1]) {
+              const unescaped = match[1]
+                .replace(/\\n/g, "\n")
+                .replace(/\\"/g, '"')
+                .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
+                .trim();
+              if (unescaped) {
+                description = unescaped;
+              }
             }
           }
         }
