@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Enhanced YouTube metadata extraction functions
+
 export async function fetchYouTubeMetadata(url: string): Promise<{
   title?: string;
   description?: string;
@@ -16,125 +16,259 @@ export async function fetchYouTubeMetadata(url: string): Promise<{
   try {
     const parsedUrl = new URL(url);
     
-    // Extract video ID from different YouTube URL formats
+    
     let videoId: string | null = null;
     if (parsedUrl.hostname.includes('youtube.com')) {
       videoId = parsedUrl.searchParams.get('v');
+      
+      if (!videoId && parsedUrl.pathname.includes('/shorts/')) {
+        videoId = parsedUrl.pathname.split('/shorts/')[1]?.split('?')[0];
+      }
+     
+      if (!videoId && parsedUrl.pathname.includes('/watch')) {
+        const pathParts = parsedUrl.pathname.split('/');
+        const watchIndex = pathParts.indexOf('watch');
+        if (watchIndex !== -1 && pathParts[watchIndex + 1]) {
+          videoId = pathParts[watchIndex + 1];
+        }
+      }
     } else if (parsedUrl.hostname === 'youtu.be') {
-      videoId = parsedUrl.pathname.slice(1);
+      videoId = parsedUrl.pathname.slice(1).split('?')[0];
     }
     
     if (!videoId) {
-      throw new Error('Invalid YouTube URL - no video ID found');
+      console.warn('Could not extract video ID from YouTube URL:', url);
+      return await fetchGeneralPageMetadata(url);
     }
     
     console.log(`[fetchYouTubeMetadata] Extracting metadata for video ID: ${videoId}`);
     
-    // Method 1: Try oEmbed API first for title
-    let oembedTitle: string | undefined;
-    try {
-      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-      const oembedResponse = await fetch(oembedUrl);
-      
-      if (oembedResponse.ok) {
-        const oembedData = await oembedResponse.json();
-        oembedTitle = oembedData.title;
-      }
-    } catch (oembedError) {
-      console.error('oEmbed method failed:', oembedError);
-    }
     
-    // Method 2: Enhanced page scraping for description
-    const scrapedData = await scrapeYouTubePageEnhanced(url, videoId);
-    
-    return {
-      title: oembedTitle || scrapedData.title,
-      description: scrapedData.description,
-      image: scrapedData.image || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-      favicon: 'https://www.youtube.com/favicon.ico'
-    };
-    
-  } catch (error) {
-    console.error('Error in fetchYouTubeMetadata:', error);
-    return {};
-  }
-}
-
-async function scrapeYouTubePageEnhanced(url: string, videoId: string): Promise<{
-  title?: string;
-  description?: string;
-  image?: string;
-}> {
-  try {
-    // Try multiple approaches for better success rate
-    const approaches = [
-      () => scrapeWithStandardHeaders(url),
-      () => scrapeWithMobileHeaders(url),
-      () => scrapeEmbedPage(videoId)
+    const methods = [
+      () => extractFromYouTubeOEmbed(url, videoId!),
+      () => extractFromYouTubePage(url, videoId!),
+      () => extractFromYouTubeAPI(videoId!),
+      () => extractFromEmbedPage(videoId!)
     ];
     
-    for (const approach of approaches) {
+    let bestResult: { title?: string; description?: string; image?: string; favicon?: string } = {};
+    
+    for (const method of methods) {
       try {
-        const result = await approach();
-        if (result.description && result.description.length > 50) {
-          console.log(`[scrapeYouTubePageEnhanced] Successfully extracted: ${result.description.substring(0, 100)}...`);
-          return result;
+        const result = await method();
+        
+        if (result.title && (!bestResult.title || result.title.length > bestResult.title.length)) {
+          bestResult.title = result.title;
         }
-      } catch (approachError) {
-        console.error('Approach failed:', approachError);
+        
+        if (result.description && (!bestResult.description || result.description.length > bestResult.description.length)) {
+          bestResult.description = result.description;
+        }
+        
+        if (result.image && !bestResult.image) {
+          bestResult.image = result.image;
+        }
+        
+        
+        if (bestResult.description && bestResult.description.length > 100) {
+          console.log(`[fetchYouTubeMetadata] Found substantial description (${bestResult.description.length} chars)`);
+          break;
+        }
+        
+      } catch (methodError) {
+        console.error(`YouTube extraction method failed:`, methodError);
         continue;
       }
     }
     
     return {
-      image: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+      title: bestResult.title,
+      description: bestResult.description,
+      image: bestResult.image || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+      favicon: 'https://www.youtube.com/favicon.ico'
     };
     
   } catch (error) {
-    console.error('Error in scrapeYouTubePageEnhanced:', error);
-    return {};
+    console.error('Error in fetchYouTubeMetadata:', error);
+   
+    return await fetchGeneralPageMetadata(url);
   }
 }
 
-async function scrapeWithStandardHeaders(url: string) {
+async function extractFromYouTubeOEmbed(url: string, videoId: string): Promise<{
+  title?: string;
+  description?: string;
+  image?: string;
+}> {
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    const response = await fetch(oembedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; URLShortener/1.0)',
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`oEmbed API returned ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('[extractFromYouTubeOEmbed] oEmbed data:', data);
+    
+    return {
+      title: data.title,
+      description: undefined, 
+      image: data.thumbnail_url
+    };
+    
+  } catch (error) {
+    console.error('oEmbed extraction failed:', error);
+    throw error;
+  }
+}
+
+
+async function extractFromYouTubePage(url: string, videoId: string): Promise<{
+  title?: string;
+  description?: string;
+  image?: string;
+}> {
+  const strategies = [
+    () => scrapeWithDesktopHeaders(url),
+    () => scrapeWithMobileHeaders(url),
+    () => scrapeMobileYouTube(url)
+  ];
+  
+  for (const strategy of strategies) {
+    try {
+      const result = await strategy();
+      if (result.description && result.description.length > 50) {
+        console.log(`[extractFromYouTubePage] Strategy succeeded with ${result.description.length} char description`);
+        return result;
+      }
+    } catch (error) {
+      console.error('Page scraping strategy failed:', error);
+      continue;
+    }
+  }
+  
+  throw new Error('All page scraping strategies failed');
+}
+
+async function scrapeWithDesktopHeaders(url: string) {
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept-Encoding': 'gzip, deflate, br',
-      'DNT': '1',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
     }
   });
   
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
   
   const html = await response.text();
   return extractMetadataFromHTML(html);
 }
 
 async function scrapeWithMobileHeaders(url: string) {
-  // Try mobile version which sometimes has cleaner HTML
-  const mobileUrl = url.replace('www.youtube.com', 'm.youtube.com');
-  
-  const response = await fetch(mobileUrl, {
+  const response = await fetch(url, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1',
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-us',
-      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept-Language': 'en-US,en;q=0.9',
     }
   });
   
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
   
   const html = await response.text();
   return extractMetadataFromHTML(html);
 }
 
-async function scrapeEmbedPage(videoId: string) {
+async function scrapeMobileYouTube(originalUrl: string) {
+
+  const mobileUrl = originalUrl.replace('www.youtube.com', 'm.youtube.com');
+  
+  const response = await fetch(mobileUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  
+  const html = await response.text();
+  return extractMetadataFromHTML(html);
+}
+
+// Method 3: YouTube internal API (using publicly available endpoints)
+async function extractFromYouTubeAPI(videoId: string): Promise<{
+  title?: string;
+  description?: string;
+  image?: string;
+}> {
+  try {
+ 
+    const apiUrl = `https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&videoId=${videoId}`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'com.google.android.youtube/17.31.35 (Linux; U; Android 11) gzip',
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: "ANDROID",
+            clientVersion: "17.31.35",
+            androidSdkVersion: 30,
+          }
+        },
+        videoId: videoId
+      })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const videoDetails = data?.videoDetails;
+      
+      if (videoDetails) {
+        return {
+          title: videoDetails.title,
+          description: videoDetails.shortDescription,
+          image: videoDetails.thumbnail?.thumbnails?.pop()?.url
+        };
+      }
+    }
+    
+    throw new Error('API response invalid');
+    
+  } catch (error) {
+    console.error('YouTube API extraction failed:', error);
+    throw error;
+  }
+}
+
+// Method 4: Embed page scraping
+async function extractFromEmbedPage(videoId: string): Promise<{
+  title?: string;
+  description?: string;
+  image?: string;
+}> {
   const embedUrl = `https://www.youtube.com/embed/${videoId}`;
   
   const response = await fetch(embedUrl, {
@@ -143,12 +277,15 @@ async function scrapeEmbedPage(videoId: string) {
     }
   });
   
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`Embed page returned ${response.status}`);
+  }
   
   const html = await response.text();
   return extractMetadataFromHTML(html);
 }
 
+// Enhanced HTML metadata extraction
 function extractMetadataFromHTML(html: string): {
   title?: string;
   description?: string;
@@ -156,27 +293,33 @@ function extractMetadataFromHTML(html: string): {
 } {
   let title: string | undefined;
   let description: string | undefined;
+  let image: string | undefined;
   
-  // Enhanced patterns for better extraction - order matters (most specific first)
+  // Enhanced patterns for better extraction
   const titlePatterns = [
+    // Primary video details in JavaScript
     /"videoDetails":\s*{[^{}]*?"title":\s*"([^"]*(?:\\.[^"]*)*)"/,
+    /"title":\s*{[^}]*?"runs":\s*\[\s*{\s*"text":\s*"([^"]*(?:\\.[^"]*)*)"/,
     /"title":\s*"([^"]*(?:\\.[^"]*)*)"/,
+    // Meta tags
     /<meta property="og:title" content="([^"]+)"/,
-    /<title>([^<]*?)(?: - YouTube)?<\/title>/
+    /<meta name="twitter:title" content="([^"]+)"/,
+    // Title tag
+    /<title>([^<]*?)(?: - YouTube)?<\/title>/,
   ];
   
   const descriptionPatterns = [
-    // Most comprehensive pattern for full description
+    // Most comprehensive - videoDetails shortDescription
     /"videoDetails":\s*{[^{}]*?"shortDescription":\s*"([^"]*(?:\\.[^"]*)*)"/,
-    // Alternative videoDetails pattern
+    // Alternative videoDetails patterns
     /"shortDescription":\s*"([^"]*(?:\\.[^"]*)*)"/,
-    // JSON-LD structured data
+    // Description in runs format (handles complex formatting)
+    /"description":\s*{\s*"runs":\s*\[((?:\s*{\s*"text":\s*"[^"]*(?:\\.[^"]*)*"\s*}(?:\s*,\s*)?)*)\]/,
+    // Simple description field
     /"description":\s*"([^"]*(?:\\.[^"]*)*)"/,
-    // Meta tags as fallback
+    // Meta tag fallbacks
     /<meta property="og:description" content="([^"]+)"/,
     /<meta name="description" content="([^"]+)"/,
-    // Try to find description in runs array
-    /"description":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([^"]*(?:\\.[^"]*)*)"/
   ];
   
   // Extract title
@@ -184,140 +327,290 @@ function extractMetadataFromHTML(html: string): {
     const match = html.match(pattern);
     if (match && match[1]) {
       title = cleanYouTubeString(match[1]);
-      if (title && title.length > 5) break;
-    }
-  }
-  
-  // Extract description with more aggressive patterns
-  for (const pattern of descriptionPatterns) {
-    const match = html.match(pattern);
-    if (match && match[1]) {
-      const rawDesc = match[1]; // Fixed: using const instead of let
-      
-      // Handle multiline descriptions better
-      const cleanDesc = cleanYouTubeString(rawDesc);
-      
-      if (cleanDesc && cleanDesc.length > 20 && !isGenericYouTubeDescription(cleanDesc)) {
-        // Don't truncate - keep the full description
-        description = cleanDesc;
-        console.log(`[extractMetadataFromHTML] Found description (${cleanDesc.length} chars): ${cleanDesc.substring(0, 200)}...`);
+      if (title && title.length > 3) {
+        console.log(`[extractMetadataFromHTML] Found title: ${title}`);
         break;
       }
     }
   }
   
-  // If standard patterns failed, try to extract from ytInitialData
-  if (!description || description.length < 50) {
-    const ytDataMatch = html.match(/var ytInitialData = ({.+?});/) ||
-                       html.match(/window\["ytInitialData"\] = ({.+?});/);
-    
-    if (ytDataMatch) {
-      try {
-        const ytData = JSON.parse(ytDataMatch[1]);
-        const extractedDesc = extractDescriptionFromYtData(ytData);
-        if (extractedDesc && extractedDesc.length > (description?.length || 0)) {
-          description = extractedDesc;
-          console.log(`[extractMetadataFromHTML] Found description from ytInitialData: ${description.substring(0, 200)}...`);
-        }
-      } catch (parseError) {
-        console.error('Error parsing ytInitialData:', parseError);
+  // Extract description with enhanced handling
+  for (const pattern of descriptionPatterns) {
+    const match = html.match(pattern);
+    if (match && match[1]) {
+      let rawDesc = match[1];
+      
+      // Handle runs format specially
+      if (pattern.source.includes('"runs"')) {
+        rawDesc = extractTextFromRuns(rawDesc);
+      }
+      
+      const cleanDesc = cleanYouTubeString(rawDesc);
+      
+      if (cleanDesc && cleanDesc.length > 15 && !isGenericYouTubeDescription(cleanDesc)) {
+        description = cleanDesc;
+        console.log(`[extractMetadataFromHTML] Found description (${cleanDesc.length} chars): ${cleanDesc.substring(0, 150)}...`);
+        break;
       }
     }
   }
   
-  return {
-    title: title?.replace(/ - YouTube$/, ''),
-    description,
-    image: undefined // Will be set by caller
-  };
-}
-
-function extractDescriptionFromYtData(data: Record<string, unknown>): string | undefined {
-  try {
-    // Navigate YouTube's complex data structure
-    const contents = (data?.contents as Record<string, unknown>)
-      ?.twoColumnWatchNextResults as Record<string, unknown>;
-    const results = (contents?.results as Record<string, unknown>)
-      ?.results as Record<string, unknown>;
-    const contentsArray = results?.contents as Array<Record<string, unknown>>;
+  // Try to extract from ytInitialData if standard patterns failed
+  if (!description || description.length < 50) {
+    const ytDataPatterns = [
+      /var ytInitialData = ({.+?});/,
+      /window\["ytInitialData"\] = ({.+?});/,
+      /ytInitialData["]\s*=\s*({.+?});/,
+      /ytInitialData\s*=\s*({.+?});/
+    ];
     
-    if (contentsArray && Array.isArray(contentsArray)) {
-      for (const content of contentsArray) {
-        // Look for video secondary info renderer
-        const secondaryInfo = content?.videoSecondaryInfoRenderer as Record<string, unknown>;
-        if (secondaryInfo?.description) {
-          const desc = extractTextFromRuns(secondaryInfo.description);
-          if (desc && desc.length > 50) {
-            return desc;
+    for (const pattern of ytDataPatterns) {
+      const ytDataMatch = html.match(pattern);
+      if (ytDataMatch) {
+        try {
+          const ytData = JSON.parse(ytDataMatch[1]);
+          const extractedDesc = extractDescriptionFromYtData(ytData);
+          if (extractedDesc && extractedDesc.length > (description?.length || 0)) {
+            description = extractedDesc;
+            console.log(`[extractMetadataFromHTML] Found description from ytInitialData (${extractedDesc.length} chars)`);
+            break;
           }
-        }
-        
-        // Also check primary info
-        const primaryInfo = content?.videoPrimaryInfoRenderer as Record<string, unknown>;
-        if (primaryInfo?.videoActions) {
-          // Sometimes description is nested deeper
+        } catch (parseError) {
+          console.error('Error parsing ytInitialData:', parseError);
           continue;
         }
       }
     }
+  }
+  
+  // Try additional extraction methods if still no good description
+  if (!description || description.length < 100) {
+    const additionalDesc = tryAlternativeDescriptionExtraction(html);
+    if (additionalDesc && additionalDesc.length > (description?.length || 0)) {
+      description = additionalDesc;
+      console.log(`[extractMetadataFromHTML] Found description via alternative method (${additionalDesc.length} chars)`);
+    }
+  }
+  
+  return {
+    title: title?.replace(/ - YouTube$/, '').trim(),
+    description: description?.trim(),
+    image
+  };
+}
+
+// Enhanced ytInitialData extraction
+function extractDescriptionFromYtData(data: any): string | undefined {
+  try {
+    // Primary path - video details
+    if (data?.videoDetails?.shortDescription) {
+      const desc = cleanYouTubeString(data.videoDetails.shortDescription);
+      if (desc && desc.length > 20) {
+        return desc;
+      }
+    }
     
-    // Try alternative structure
-    const videoDetails = data?.videoDetails as Record<string, unknown>;
-    if (videoDetails?.shortDescription && typeof videoDetails.shortDescription === 'string') {
-      return cleanYouTubeString(videoDetails.shortDescription);
+    // Secondary path - contents structure
+    const paths = [
+      'contents.twoColumnWatchNextResults.results.results.contents',
+      'contents.twoColumnWatchNextResults.results.results',
+      'response.contents.twoColumnWatchNextResults.results.results.contents'
+    ];
+    
+    for (const path of paths) {
+      const contents = getNestedValue(data, path);
+      if (Array.isArray(contents)) {
+        for (const content of contents) {
+          // Check various renderer types
+          const renderers = [
+            'videoSecondaryInfoRenderer',
+            'videoPrimaryInfoRenderer',
+            'videoDescriptionRenderer'
+          ];
+          
+          for (const rendererType of renderers) {
+            const renderer = content[rendererType];
+            if (renderer?.description) {
+              const desc = extractTextFromComplexStructure(renderer.description);
+              if (desc && desc.length > 20) {
+                return desc;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Tertiary path - try to find any description field
+    const description = findDescriptionInObject(data);
+    if (description && description.length > 20) {
+      return description;
     }
     
   } catch (error) {
-    console.error('Error extracting from ytInitialData:', error);
+    console.error('Error in extractDescriptionFromYtData:', error);
   }
   
   return undefined;
 }
 
-function extractTextFromRuns(descriptionObj: unknown): string | undefined {
+// Helper function to get nested values safely
+function getNestedValue(obj: any, path: string): any {
+  return path.split('.').reduce((current, key) => current?.[key], obj);
+}
+
+// Recursively find description in complex objects
+function findDescriptionInObject(obj: any, visited = new Set()): string | undefined {
+  if (!obj || typeof obj !== 'object' || visited.has(obj)) {
+    return undefined;
+  }
+  
+  visited.add(obj);
+  
+  // Check if current object has description
+  if (obj.shortDescription && typeof obj.shortDescription === 'string') {
+    const desc = cleanYouTubeString(obj.shortDescription);
+    if (desc.length > 20) return desc;
+  }
+  
+  if (obj.description) {
+    if (typeof obj.description === 'string') {
+      const desc = cleanYouTubeString(obj.description);
+      if (desc.length > 20) return desc;
+    } else if (typeof obj.description === 'object') {
+      const desc = extractTextFromComplexStructure(obj.description);
+      if (desc && desc.length > 20) return desc;
+    }
+  }
+  
+  // Recursively search in arrays and objects
+  for (const [key, value] of Object.entries(obj)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = findDescriptionInObject(item, visited);
+        if (found) return found;
+      }
+    } else if (typeof value === 'object') {
+      const found = findDescriptionInObject(value, visited);
+      if (found) return found;
+    }
+  }
+  
+  return undefined;
+}
+
+// Extract text from complex YouTube data structures
+function extractTextFromComplexStructure(descriptionObj: any): string | undefined {
   try {
-    const desc = descriptionObj as Record<string, unknown>;
+    if (typeof descriptionObj === 'string') {
+      return cleanYouTubeString(descriptionObj);
+    }
     
-    if (desc?.runs && Array.isArray(desc.runs)) {
-      return desc.runs
-        .map((run: Record<string, unknown>) => (run.text as string) || '')
+    // Handle runs array
+    if (descriptionObj?.runs && Array.isArray(descriptionObj.runs)) {
+      const text = descriptionObj.runs
+        .map((run: any) => run.text || '')
+        .join('')
+        .trim();
+      return cleanYouTubeString(text);
+    }
+    
+    // Handle simpleText
+    if (descriptionObj?.simpleText) {
+      return cleanYouTubeString(descriptionObj.simpleText);
+    }
+    
+    // Handle content array
+    if (descriptionObj?.content && Array.isArray(descriptionObj.content)) {
+      const text = descriptionObj.content
+        .map((item: any) => item.text || '')
+        .join('')
+        .trim();
+      return cleanYouTubeString(text);
+    }
+    
+  } catch (error) {
+    console.error('Error in extractTextFromComplexStructure:', error);
+  }
+  
+  return undefined;
+}
+
+// Alternative description extraction for edge cases
+function tryAlternativeDescriptionExtraction(html: string): string | undefined {
+  const patterns = [
+    // JSON-LD structured data
+    /"description":\s*"([^"]{100,}(?:\\.[^"]*)*)"/g,
+    // Schema.org microdata
+    /itemprop="description"[^>]*content="([^"]{50,})"/,
+    // Alternative meta patterns
+    /<meta[^>]+name="description"[^>]+content="([^"]{50,})"/i,
+    // Video schema
+    /"VideoObject"[^}]*"description":\s*"([^"]{50,}(?:\\.[^"]*)*)"/,
+  ];
+  
+  for (const pattern of patterns) {
+    const matches = html.matchAll(pattern);
+    for (const match of matches) {
+      if (match[1]) {
+        const desc = cleanYouTubeString(match[1]);
+        if (desc.length > 50 && !isGenericYouTubeDescription(desc)) {
+          return desc;
+        }
+      }
+    }
+  }
+  
+  return undefined;
+}
+
+// Extract text from runs format
+function extractTextFromRuns(runsString: string): string {
+  try {
+    // Parse the runs array structure
+    const runsMatch = runsString.match(/{\s*"text":\s*"([^"]*(?:\\.[^"]*)*)"/g);
+    if (runsMatch) {
+      return runsMatch
+        .map(match => {
+          const textMatch = match.match(/"text":\s*"([^"]*(?:\\.[^"]*)*)"/);
+          return textMatch ? textMatch[1] : '';
+        })
         .join('')
         .trim();
     }
-    
-    if (typeof descriptionObj === 'string') {
-      return descriptionObj.trim();
-    }
-    
-    if (desc?.simpleText && typeof desc.simpleText === 'string') {
-      return desc.simpleText.trim();
-    }
-    
+    return runsString;
   } catch (error) {
     console.error('Error extracting text from runs:', error);
+    return runsString;
   }
-  
-  return undefined;
 }
 
+// Enhanced string cleaning for YouTube content
 function cleanYouTubeString(str: string): string {
   if (!str) return '';
   
   return str
+    // Handle escaped characters
     .replace(/\\n/g, '\n')
     .replace(/\\r/g, '\r')
     .replace(/\\t/g, '\t')
     .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'")
     .replace(/\\\\/g, '\\')
+    // Handle Unicode escapes
     .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => 
       String.fromCharCode(parseInt(code, 16))
     )
-    .replace(/\s+/g, ' ')
+    // Clean up whitespace but preserve line breaks
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .replace(/\s+\n/g, '\n')
     .trim();
 }
 
+// Enhanced generic description detection
 function isGenericYouTubeDescription(description: string): boolean {
-  if (!description || description.length < 15) return true;
+  if (!description || description.length < 10) return true;
   
   const generic = [
     'enjoy the videos and music you love',
@@ -333,82 +626,55 @@ function isGenericYouTubeDescription(description: string): boolean {
     'like and subscribe',
     'click here to subscribe',
     'visit our website',
-    'follow us on'
+    'follow us on',
+    'check out our',
+    'don\'t forget to',
+    'please subscribe',
+    'hit the bell',
+    'notification bell'
   ];
   
   const lowerDesc = description.toLowerCase().trim();
   
   // Check for generic patterns
   const hasGenericPattern = generic.some(pattern => lowerDesc.includes(pattern));
+  if (hasGenericPattern) return true;
   
-  // Check if it's mostly URLs or hashtags
+  // Check if it's mostly URLs
   const urlPattern = /(https?:\/\/[^\s]+)/g;
-  const hashtagPattern = /#\w+/g;
   const urls = description.match(urlPattern) || [];
-  const hashtags = description.match(hashtagPattern) || [];
-  
-  const contentLength = description.length;
   const urlLength = urls.join('').length;
-  const hashtagLength = hashtags.join('').length;
   
-  // If more than 70% is URLs and hashtags, consider it weak
-  const isMainlyUrls = (urlLength + hashtagLength) / contentLength > 0.7;
+  // If more than 80% is URLs, consider it weak
+  const isMainlyUrls = urlLength / description.length > 0.8;
   
-  return hasGenericPattern || isMainlyUrls;
+  return isMainlyUrls;
 }
 
-// Enhanced page metadata extraction
-export async function fetchPageMetadata(url: string) {
-  console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`);
-  
-  // Check if it's a YouTube URL and use specialized extraction
-  try {
-    const parsedUrl = new URL(url);
-    const isYouTube = parsedUrl.hostname.includes('youtube.com') || parsedUrl.hostname === 'youtu.be';
-    
-    if (isYouTube) {
-      console.log(`[fetchPageMetadata] Detected YouTube URL, using specialized extraction`);
-      const youtubeMetadata = await fetchYouTubeMetadata(url);
-      if (youtubeMetadata.title || youtubeMetadata.description) {
-        console.log(`[fetchPageMetadata] Successfully extracted YouTube metadata. Description length: ${youtubeMetadata.description?.length || 0}`);
-        return youtubeMetadata;
-      }
-    }
-  } catch (urlError) {
-    console.error('Error parsing URL for YouTube detection:', urlError);
-  }
-  
-  // Continue with existing general metadata extraction for non-YouTube URLs
+// Fallback to general page metadata extraction
+async function fetchGeneralPageMetadata(url: string) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     const response = await fetch(url, {
       signal: controller.signal,
       redirect: "follow",
-      cache: "no-store",
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-        Pragma: "no-cache",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
       },
     });
 
     clearTimeout(timeoutId);
-    const html = response.ok ? await response.text() : "";
     
-    let title: string | undefined;
-    let description: string | undefined;
-    let image: string | undefined;
-    let favicon: string | undefined;
-
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const html = await response.text();
+    
     if (html) {
       const $ = cheerio.load(html);
 
@@ -420,72 +686,66 @@ export async function fetchPageMetadata(url: string) {
         return undefined;
       };
 
-      title = $("head title").text().trim() ||
+      const title = $("head title").text().trim() ||
         readMeta([
           "meta[property='og:title']",
           "meta[name='og:title']",
           "meta[name='twitter:title']",
-          "meta[itemprop='name']",
         ]);
 
-      description = readMeta([
+      const description = readMeta([
         "meta[name='description']",
         "meta[property='og:description']",
         "meta[name='og:description']",
         "meta[name='twitter:description']",
-        "meta[itemprop='description']",
       ]);
 
-      const candidateImageSelectors = [
+      const image = readMeta([
         "meta[property='og:image']",
         "meta[property='og:image:url']",
         "meta[name='twitter:image']",
         "link[rel='image_src']",
-        "meta[itemprop='image']",
-      ];
-      
-      for (const sel of candidateImageSelectors) {
-        const imgUrl = $(sel).attr("content") || $(sel).attr("href");
-        if (imgUrl) {
-          image = imgUrl;
-          break;
-        }
-      }
+      ]);
 
-      favicon = $("link[rel='icon']").attr("href") ||
-        $("link[rel='shortcut icon']").attr("href") ||
-        $("link[rel='apple-touch-icon']").attr("href");
+      const favicon = readMeta([
+        "link[rel='icon']",
+        "link[rel='shortcut icon']",
+        "link[rel='apple-touch-icon']",
+      ]);
+
+      return { title, description, image, favicon };
     }
 
-    // Resolve relative URLs
-    try {
-      const baseUrl = new URL(response.url || url);
-      
-      if (image && !image.startsWith('http')) {
-        image = new URL(image, baseUrl.origin).toString();
-      }
-      
-      if (favicon && !favicon.startsWith('http')) {
-        favicon = new URL(favicon, baseUrl.origin).toString();
-      }
-    } catch (e) {
-      console.error('Error resolving URLs:', e);
-    }
-
-    return {
-      title: title || undefined,
-      description: description || undefined, // Keep full description, no truncation
-      image: image || undefined,
-      favicon: favicon || undefined,
-    };
+    return {};
     
   } catch (error) {
-    console.error(`[fetchPageMetadata] Error fetching metadata for ${url}:`, error);
-    return {
-      title: undefined,
-      description: undefined,
-      image: undefined,
-      favicon: undefined,
-    };
+    console.error('General page metadata extraction failed:', error);
+    return {};
   }
+}
+
+// Main entry point for page metadata extraction
+export async function fetchPageMetadata(url: string) {
+  console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`);
+  
+  try {
+    const parsedUrl = new URL(url);
+    const isYouTube = parsedUrl.hostname.includes('youtube.com') || parsedUrl.hostname === 'youtu.be';
+    
+    if (isYouTube) {
+      console.log(`[fetchPageMetadata] Detected YouTube URL, using specialized extraction`);
+      const result = await fetchYouTubeMetadata(url);
+      
+      if (result.title || result.description) {
+        console.log(`[fetchPageMetadata] YouTube extraction successful. Title: ${!!result.title}, Description length: ${result.description?.length || 0}`);
+        return result;
+      }
+    }
+  } catch (error) {
+    console.error('Error in YouTube-specific extraction:', error);
+  }
+  
+  // Fallback to general metadata extraction
+  console.log(`[fetchPageMetadata] Using general metadata extraction`);
+  return await fetchGeneralPageMetadata(url);
 }
