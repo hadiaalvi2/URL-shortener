@@ -10,16 +10,15 @@ export async function fetchPageMetadata(url: string) {
   console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`);
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout to 15 seconds for YouTube
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    console.log(`[fetchPageMetadata] Fetching response for: ${url}`); // Debugging line
+    console.log(`[fetchPageMetadata] Fetching response for: ${url}`);
     
     const response = await fetch(url, {
       signal: controller.signal,
       redirect: "follow",
       cache: "no-store",
       headers: {
-        // Some sites block requests without a user agent
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -35,15 +34,13 @@ export async function fetchPageMetadata(url: string) {
     });
 
     clearTimeout(timeoutId);
-    const effectiveUrl = response.url || url; // final URL after redirects
+    const effectiveUrl = response.url || url;
 
     if (!response.ok) {
-      const errorHtml = await response.text();
-      console.error(`[fetchPageMetadata] Failed to fetch ${url}: ${response.status} ${response.statusText}. HTML response: ${errorHtml.substring(0, 500)}`);
+      console.error(`[fetchPageMetadata] Failed to fetch ${url}: ${response.status} ${response.statusText}`);
     }
 
     const html = response.ok ? await response.text() : "";
-    console.log(`[fetchPageMetadata] Fetched HTML for ${url}:`, html.substring(0, 500)); // Log first 500 characters of HTML
     
     let title: string | undefined;
     let description: string | undefined;
@@ -52,7 +49,6 @@ export async function fetchPageMetadata(url: string) {
 
     try {
       const $ = cheerio.load(html);
-      console.log(`[fetchPageMetadata] Cheerio loaded HTML for ${url}.`);
 
       const readMeta = (selectors: string[]): string | undefined => {
         for (const sel of selectors) {
@@ -80,6 +76,43 @@ export async function fetchPageMetadata(url: string) {
           "meta[itemprop='description']",
         ]);
 
+      // Special handling for YouTube
+      const isYouTube = effectiveUrl.includes('youtube.com') || effectiveUrl.includes('youtu.be');
+      if (isYouTube) {
+        // Extract YouTube title more reliably
+        const ytTitle = $("meta[property='og:title']").attr("content") || 
+                        $("meta[name='twitter:title']").attr("content") ||
+                        title;
+        if (ytTitle && ytTitle !== title) {
+          title = ytTitle;
+        }
+
+        // Extract YouTube description more reliably
+        const ytDescription = $("meta[property='og:description']").attr("content") || 
+                             $("meta[name='description']").attr("content") ||
+                             $("meta[name='twitter:description']").attr("content") ||
+                             description;
+        
+        // Filter out generic YouTube descriptions
+        if (ytDescription && !ytDescription.includes("Enjoy the videos and music") && 
+            !ytDescription.includes("Upload original content")) {
+          description = ytDescription;
+        }
+
+        // Try to extract from JSON-LD for better description
+        try {
+          const jsonLdScript = $('script[type="application/ld+json"]').html();
+          if (jsonLdScript) {
+            const jsonLd = JSON.parse(jsonLdScript);
+            if (jsonLd && jsonLd.description && !jsonLd.description.includes("Enjoy the videos")) {
+              description = jsonLd.description;
+            }
+          }
+        } catch (e) {
+          console.log('Could not parse JSON-LD for YouTube');
+        }
+      }
+
       const candidateImageSelectors = [
         "meta[property='og:image']",
         "meta[property='og:image:url']",
@@ -92,127 +125,37 @@ export async function fetchPageMetadata(url: string) {
         "link[rel='image_src']",
         "meta[itemprop='image']",
       ];
-      const candidates: string[] = [];
+      
       for (const sel of candidateImageSelectors) {
-        $(sel).each((_i, el) => {
-          const v = $(el).attr("content") || $(el).attr("href");
-          if (v && !candidates.includes(v)) candidates.push(v);
-        });
+        const val = $(sel).attr("content") || $(sel).attr("href");
+        if (val) {
+          image = val;
+          break;
+        }
       }
-      image = candidates.find(Boolean);
 
-      // Attempt to extract metadata from JSON-LD (handles arrays and @graph)
-      const pickImageFromLd = (img: unknown): string | undefined => {
-        if (img == null) return undefined;
-        if (typeof img === 'string') return img;
-        if (Array.isArray(img)) {
-          for (const it of img) {
-            const got = pickImageFromLd(it);
-            if (got) return got;
-          }
-          return undefined;
+      // YouTube thumbnail fallback
+      if (isYouTube && !image) {
+        const videoId = getYouTubeVideoId(effectiveUrl);
+        if (videoId) {
+          image = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
         }
-        if (typeof img === 'object') {
-          const obj = img as { url?: string; contentUrl?: string; secure_url?: string; secureUrl?: string };
-          return obj.url || obj.contentUrl || obj.secure_url || obj.secureUrl || undefined;
-        }
-        return undefined;
-      };
+      }
 
-      const considerLdNode = (node: unknown) => {
-        if (!node || typeof node !== 'object') return;
-        const obj = node as Record<string, unknown>;
-        const type = obj['@type'] as string | undefined;
-        if (type === 'WebPage' || type === 'Product' || type === 'Article' || type === 'NewsArticle') {
-          if (!title) title = (obj.name as string) || (obj.headline as string) || (obj.alternativeHeadline as string) || (obj.url as string);
-          if (!description) description = obj.description as string | undefined;
-          if (!image) image = pickImageFromLd(obj.image);
-        }
-      };
-
-      $('script[type="application/ld+json"]').each((_idx, el) => {
-        try {
-          const text = $(el).text();
-          if (!text) return;
-          const ldJson = JSON.parse(text);
-          console.log('[fetchPageMetadata] Found JSON-LD');
-
-          if (Array.isArray(ldJson)) {
-            for (const item of ldJson) considerLdNode(item);
-          } else if (ldJson && typeof ldJson === 'object') {
-            if (Array.isArray(ldJson['@graph'])) {
-              for (const item of ldJson['@graph']) considerLdNode(item);
-            }
-            considerLdNode(ldJson);
-          }
-        } catch (e) {
-          console.error('[fetchPageMetadata] Error parsing JSON-LD:', e);
-        }
-      });
-
-      // YouTube specific: override generic site description with actual video shortDescription
-      try {
-        const ytUrl = new URL(effectiveUrl);
-        const isYouTube = /(^|\.)youtube\.com$/.test(ytUrl.hostname) || ytUrl.hostname === "youtu.be";
-        if (isYouTube) {
-          const isGeneric = !description || description.toLowerCase().includes("enjoy the videos and music you love");
-
-          const pickShortDesc = (text: string): string | undefined => {
-            const m = text.match(/\"shortDescription\":\"([\s\S]*?)\"/);
-            if (m && m[1]) {
-              const unescaped = m[1]
-                .replace(/\\n/g, " \u2028 ")
-                .replace(/\\"/g, '"')
-                .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
-                .replace(/\s+/g, ' ')
-                .trim();
-              return unescaped;
-            }
-            return undefined;
-          };
-
-          // Try from original HTML first
-          let shortDesc = pickShortDesc(html);
-
-          // If not found, fetch a readable copy via Jina reader using the canonical watch URL
-          if (!shortDesc || shortDesc.length < 10 || isGeneric) {
-            // Extract video id from url
-            let vid: string | undefined = ytUrl.searchParams.get('v') || undefined;
-            if (!vid && ytUrl.hostname === 'youtu.be') {
-              const parts = ytUrl.pathname.split('/').filter(Boolean);
-              vid = parts[0];
-            }
-            if (vid) {
-              const jinaTargets = [
-                `https://r.jina.ai/https://www.youtube.com/watch?v=${vid}`,
-                `https://r.jina.ai/http://www.youtube.com/watch?v=${vid}`,
-                `https://r.jina.ai/https://m.youtube.com/watch?v=${vid}`,
-              ];
-              for (const jt of jinaTargets) {
-                try {
-                  const jr = await fetch(jt, { cache: 'no-store' });
-                  if (jr.ok) {
-                    const jtHtml = await jr.text();
-                    shortDesc = pickShortDesc(jtHtml) || cheerio.load(jtHtml)("meta[name='description']").attr('content') || shortDesc;
-                    if (shortDesc && shortDesc.length > 10) break;
-                  }
-                } catch {}
-              }
-            }
-          }
-
-          if (shortDesc && (isGeneric || shortDesc.length > (description?.length || 0))) {
-            description = shortDesc;
-          }
-        }
-      } catch {}
+      // Try all common rel attributes for favicon
+      favicon =
+        $("link[rel='icon']").attr("href") ||
+        $("link[rel='shortcut icon']").attr("href") ||
+        $("link[rel='apple-touch-icon']").attr("href") ||
+        $("link[rel='apple-touch-icon-precomposed']").attr("href");
     } catch (e) {
-        console.error('[fetchPageMetadata] Error loading HTML with Cheerio or parsing meta tags:', e);
+      console.error('[fetchPageMetadata] Error loading HTML with Cheerio:', e);
     }
 
+    // Resolve relative URLs
     try {
       const baseUrl = new URL(effectiveUrl);
-      // Resolve image URL
+      
       if (image) {
         try {
           if (image.startsWith("//")) {
@@ -229,10 +172,8 @@ export async function fetchPageMetadata(url: string) {
       if (favicon) {
         try {
           if (favicon.startsWith("//")) {
-            // protocol-relative URL
             favicon = `${baseUrl.protocol}${favicon}`;
           } else if (!favicon.startsWith("http")) {
-            // relative URL
             favicon = new URL(favicon, baseUrl.origin).toString();
           }
         } catch (e) {
@@ -242,127 +183,37 @@ export async function fetchPageMetadata(url: string) {
       }
     } catch (e) {
       console.error('[fetchPageMetadata] Error creating base URL:', e);
-      title = title || undefined;
-      description = description || undefined;
-      image = undefined;
-      favicon = undefined;
     }
 
-    // If critical data is missing or the first fetch failed, try a fallback via Jina reader
-    if ((!title && !description && !image) || !response.ok || !html) {
+    // Final fallback for favicon
+    if (!favicon) {
       try {
-        const u = new URL(url);
-        const proto = u.protocol.replace(':',''); // 'http' or 'https'
-        const jinaUrl = `https://r.jina.ai/${proto}://${u.host}${u.pathname}${u.search}`;
-        console.log(`[fetchPageMetadata] Attempting fallback fetch via Jina reader: ${jinaUrl}`);
-        const fallbackRes = await fetch(jinaUrl, { cache: "no-store" });
-        if (fallbackRes.ok) {
-          const fallbackHtml = await fallbackRes.text();
-          const $fb = cheerio.load(fallbackHtml);
-          const fbTitle = $fb("head title").text().trim() || $fb("meta[property='og:title']").attr("content");
-          const fbDesc =
-            $fb("meta[name='description']").attr("content") ||
-            $fb("meta[property='og:description']").attr("content");
-          const fbImg =
-            $fb("meta[property='og:image']").attr("content") ||
-            $fb("img").first().attr("src");
-          title = title || fbTitle;
-          description = description || fbDesc;
-          image = image || fbImg;
-        } else {
-          console.warn(`[fetchPageMetadata] Jina fallback failed: ${fallbackRes.status} ${fallbackRes.statusText}`);
-        }
-      } catch (fallbackError) {
-        console.warn('[fetchPageMetadata] Error during fallback extraction:', fallbackError);
-      }
-    }
-
-    // AMP page fallback for commerce/publisher sites
-    try {
-      if (!image || !title || !description) {
-        const $h = cheerio.load(html);
-        const ampHref = $h("link[rel='amphtml']").attr("href");
-        if (ampHref) {
-          const ampUrl = new URL(ampHref, new URL(effectiveUrl).origin).toString();
-          console.log(`[fetchPageMetadata] Fetching AMP page: ${ampUrl}`);
-          const ampRes = await fetch(ampUrl, { cache: "no-store" });
-          if (ampRes.ok) {
-            const ampHtml = await ampRes.text();
-            const $a = cheerio.load(ampHtml);
-            title = title || $a("meta[property='og:title']").attr("content") || $a("head title").text().trim();
-            description = description ||
-              $a("meta[property='og:description']").attr("content") ||
-              $a("meta[name='description']").attr("content");
-            image = image ||
-              $a("meta[property='og:image']").attr("content") ||
-              $a("meta[name='twitter:image']").attr("content");
-          }
-        }
-      }
-    } catch (ampErr) {
-      console.warn('[fetchPageMetadata] AMP fallback failed:', ampErr);
-    }
-
-    // YouTube thumbnail heuristic
-    try {
-      const u = new URL(effectiveUrl);
-      if ((!image || image.length === 0) && (u.hostname.endsWith("youtube.com") || u.hostname === "youtu.be")) {
-        let vid = u.searchParams.get("v");
-        if (!vid) {
-          const parts = u.pathname.split("/").filter(Boolean);
-          vid = parts[0];
-        }
-        if (vid) {
-          image = `https://img.youtube.com/vi/${vid}/maxresdefault.jpg`;
-        }
-      }
-    } catch {}
-
-    // Final pass: provide a sensible favicon fallback via Google S2 service
-    try {
-      const baseForFavicon = new URL(url);
-      if (!favicon) {
-        favicon = `https://www.google.com/s2/favicons?domain=${baseForFavicon.hostname}&sz=128`;
-      }
-    } catch {}
-
-    // External service fallback (optional): Microlink
-    try {
-      if ((!title && !description && !image) || !image) {
-        const apiKey = process.env.MICROLINK_API_KEY;
-        const microlinkUrl = `https://api.microlink.io?url=${encodeURIComponent(url)}&audio=false&video=false&screenshot=false&palette=false&meta=true&iframe=false&embed=false&waitUntil=networkidle0`;
-        const microlinkRes = await fetch(microlinkUrl, {
-          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-        });
-        if (microlinkRes.ok) {
-          const microlinkData = await microlinkRes.json();
-          if (microlinkData.status === "success") {
-            title = title || microlinkData.data.title;
-            description = description || microlinkData.data.description;
-            image = image || microlinkData.data.image?.url;
-          }
-        }
-      }
-    } catch (microlinkError) {
-      console.warn('[fetchPageMetadata] Microlink fallback failed:', microlinkError);
+        const urlObj = new URL(url);
+        favicon = `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`;
+      } catch {}
     }
 
     // Clean up title and description
     if (title) {
       title = title.replace(/\s+/g, ' ').trim();
-      if (title.length > 200) title = title.substring(0, 200) + '…';
+      // Remove YouTube suffix if present
+      if (title.includes(' - YouTube')) {
+        title = title.replace(' - YouTube', '');
+      }
     }
 
     if (description) {
       description = description.replace(/\s+/g, ' ').trim();
-      if (description.length > 300) description = description.substring(0, 300) + '…';
+      // Remove generic YouTube descriptions
+      if (description.includes('Enjoy the videos and music you love')) {
+        description = undefined;
+      }
     }
 
     console.log(`[fetchPageMetadata] Extracted metadata for ${url}:`, {
-      title: title ? `${title.substring(0, 50)}...` : 'none',
+      title: title || 'none',
       description: description ? `${description.substring(0, 50)}...` : 'none',
-      image: image ? 'found' : 'none',
-      favicon: favicon ? 'found' : 'none'
+      image: image ? 'found' : 'none'
     });
 
     return {
@@ -380,4 +231,23 @@ export async function fetchPageMetadata(url: string) {
       favicon: undefined,
     };
   }
+}
+
+// Helper function to extract YouTube video ID
+function getYouTubeVideoId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
+    /youtube\.com\/watch\?v=([^&]+)/,
+    /youtube\.com\/embed\/([^\/]+)/,
+    /youtu\.be\/([^\/]+)/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  
+  return null;
 }

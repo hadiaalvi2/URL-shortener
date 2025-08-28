@@ -16,9 +16,7 @@ export interface UrlStorage {
 
 // Vercel KV functions
 export async function getUrlFromKV(shortCode: string): Promise<UrlData | null> {
-  console.log(`Attempting to get URL data for short code: ${shortCode}`);
   const data = await kv.get<UrlData>(`url:${shortCode}`);
-  console.log(`Data for ${shortCode}:`, data);
   return data;
 }
 
@@ -30,7 +28,7 @@ export async function saveUrlToKV(shortCode: string, data: UrlData) {
 export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   if (!data) return true;
   
-  const genericTitle = data.title?.toLowerCase().startsWith("page from ") ?? false;
+  const genericTitle = data.title?.toLowerCase().includes("youtube") ?? false;
   const genericDescription = isGenericDescription(data.description);
   const googleFavicon = data.favicon?.includes("google.com/s2/favicons") ?? false;
   const missingCore = !data.title && !data.description && !data.image;
@@ -55,6 +53,9 @@ function isGenericDescription(desc?: string): boolean {
     /shared (link|content)/i,
     /default (description|title)/i,
     /^[\W\s]*$/, // Only special characters or whitespace
+    /enjoy the videos and music you love/i,
+    /upload original content/i,
+    /share it all with friends/i
   ];
   
   const isTooShort = desc.trim().length < 25;
@@ -149,8 +150,9 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   // Enhanced metadata extraction with better YouTube handling
   let enhancedMetadata = metadata || {};
   
-  // If metadata is weak or missing, try to fetch better metadata
-  if (isWeakMetadata(metadata)) {
+  // Always try to fetch better metadata for YouTube URLs
+  const isYouTube = normalizedUrl.includes('youtube.com') || normalizedUrl.includes('youtu.be');
+  if (isYouTube || isWeakMetadata(metadata)) {
     try {
       console.log(`Fetching enhanced metadata for: ${url}`);
       const fetchedMetadata = await fetchPageMetadata(url);
@@ -171,22 +173,6 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   }
 
-  // Special handling for YouTube URLs to ensure dynamic descriptions
-  try {
-    const urlObj = new URL(normalizedUrl);
-    const isYouTube = urlObj.hostname.includes('youtube.com') || urlObj.hostname === 'youtu.be';
-    
-    if (isYouTube && (!enhancedMetadata.description || isGenericDescription(enhancedMetadata.description))) {
-      // Try to extract better YouTube description
-      const youtubeDescription = await extractYouTubeDescription(normalizedUrl);
-      if (youtubeDescription && !isGenericDescription(youtubeDescription)) {
-        enhancedMetadata.description = youtubeDescription;
-      }
-    }
-  } catch (error) {
-    console.error('Error in YouTube-specific handling:', error);
-  }
-
   // Store the data in KV
   const urlData: UrlData = {
     originalUrl: url,
@@ -200,66 +186,6 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   await kv.set(`url_to_code:${normalizedUrl}`, shortCode); // Store reverse mapping for efficient lookup
 
   return shortCode;
-}
-
-// Enhanced YouTube description extraction
-async function extractYouTubeDescription(url: string): Promise<string | undefined> {
-  try {
-    console.log(`Extracting YouTube description for: ${url}`);
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'Accept-Language': 'en-US,en;q=0.9',
-      }
-    });
-    
-    const html = await response.text();
-    
-    // Multiple extraction strategies for YouTube
-    const extractionPatterns = [
-      /"description":"([^"]+)"/,
-      /"shortDescription":"([^"]+)"/,
-      /"videoDescription":"([^"]+)"/,
-      /<meta name="description" content="([^"]+)">/,
-      /"content":"([^"]{50,500})"/ // General content extraction
-    ];
-    
-    for (const pattern of extractionPatterns) {
-      const match = html.match(pattern);
-      if (match && match[1]) {
-        const description = match[1]
-          .replace(/\\n/g, ' ')
-          .replace(/\\"/g, '"')
-          .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
-          .trim();
-        
-        if (description && description.length > 30 && !isGenericDescription(description)) {
-          console.log(`Found YouTube description: ${description.substring(0, 100)}...`);
-          return description;
-        }
-      }
-    }
-    
-    // Fallback: Extract from JSON-LD
-    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-    if (jsonLdMatch) {
-      try {
-        const jsonData = JSON.parse(jsonLdMatch[1]);
-        const description = jsonData?.description || jsonData?.videoDescription;
-        if (description && !isGenericDescription(description)) {
-          return description;
-        }
-      } catch (e) {
-        console.error('Error parsing JSON-LD:', e);
-      }
-    }
-    
-  } catch (error) {
-    console.error('Error extracting YouTube description:', error);
-  }
-  
-  return undefined;
 }
 
 export async function getAllUrls(): Promise<Record<string, string>> {

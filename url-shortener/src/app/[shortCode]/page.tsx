@@ -27,9 +27,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     const original = data.originalUrl ? new URL(data.originalUrl) : null
 
-    // If stored metadata is weak or missing description, try fetching a fresh one
+    // Always try to refresh metadata for social media previews
     try {
-      if (!data.description || isWeakMetadata(data)) {
+      if (isWeakMetadata(data)) {
         const fresh = await fetchPageMetadata(data.originalUrl)
         const improved = await updateUrlData(shortCode, fresh)
         if (improved) {
@@ -37,9 +37,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         }
       }
     } catch {}
+    
     const domainFallback = original ? original.hostname : undefined
     const title = data.title || domainFallback
-    // Never include URL in description - only use actual description or title
     const description = data.description || data.title || undefined
     
     const googleFavicon = original ? `https://www.google.com/s2/favicons?domain=${original.hostname}&sz=256` : undefined
@@ -57,7 +57,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         type: 'website',
         title,
         description,
-        // Prefer the original URL so preview platforms show the target domain
         url: original ? original.toString() : new URL(`/${shortCode}`, metadataBase).toString(),
         images: imageUrl ? [{
           url: imageUrl,
@@ -68,7 +67,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         siteName: "URL Shortener",
       },
       twitter: {
-        card: data.image ? 'summary_large_image' : 'summary',
+        card: imageUrl ? 'summary_large_image' : 'summary',
         title,
         description,
         images: imageUrl ? [imageUrl] : [],
@@ -121,15 +120,15 @@ export default async function RedirectPage(props: Props) {
       let description = data.description || undefined
       let imageUrl = data.image
 
-      // Opportunistically refresh weak/missing metadata for previews
+      // Always refresh metadata for social media bots to ensure fresh data
       try {
-        if (!description || isWeakMetadata(data)) {
-          const fresh = await fetchPageMetadata(data.originalUrl)
-          title = fresh.title || title
-          description = fresh.description || description
-          imageUrl = fresh.image || imageUrl
-          await updateUrlData(shortCode, fresh)
-        }
+        const fresh = await fetchPageMetadata(data.originalUrl)
+        title = fresh.title || title
+        description = fresh.description || description
+        imageUrl = fresh.image || imageUrl
+        
+        // Update the stored data with fresh metadata
+        await updateUrlData(shortCode, { title, description, image: imageUrl })
       } catch {}
 
       return (
