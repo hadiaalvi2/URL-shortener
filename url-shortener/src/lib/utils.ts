@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 async function safeFetch(
   url: string,
   options: RequestInit = {},
-  timeout = 20000 // Increased timeout for YouTube
+  timeout = 15000
 ): Promise<Response> {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeout)
@@ -19,17 +19,12 @@ async function safeFetch(
       ...options,
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+        "User-Agent": "Mozilla/5.0 (compatible; LinkPreview/1.0; +http://linkpreview.net)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
-        "DNT": "1",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
         ...options.headers,
       },
     })
@@ -40,78 +35,134 @@ async function safeFetch(
 }
 
 // ---- Enhanced General Page Metadata ----
-export async function fetchPageMetadata(url: string, retryCount = 2) {
+export async function fetchPageMetadata(url: string, retryCount = 3) {
   console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`)
   
+  // Normalize URL first
+  let normalizedUrl = url
+  try {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      normalizedUrl = 'https://' + url
+    }
+    new URL(normalizedUrl) // Validate URL
+  } catch (error) {
+    console.error(`[fetchPageMetadata] Invalid URL: ${url}`)
+    return {
+      title: extractDomainTitle(url),
+      description: "",
+      image: "",
+      favicon: getDefaultFavicon(url)
+    }
+  }
+
   for (let attempt = 1; attempt <= retryCount; attempt++) {
     try {
-      const isYouTube = url.includes("youtube.com") || url.includes("youtu.be")
+      console.log(`[fetchPageMetadata] Attempt ${attempt}/${retryCount} for: ${normalizedUrl}`)
+
+      const isYouTube = normalizedUrl.includes("youtube.com") || normalizedUrl.includes("youtu.be")
       if (isYouTube) {
         console.log(`[fetchPageMetadata] Detected YouTube URL, using specialized extraction`)
-        return await fetchYouTubeMetadata(url)
+        return await fetchYouTubeMetadata(normalizedUrl)
       }
 
-      const response = await safeFetch(url, {
+      const response = await safeFetch(normalizedUrl, {
         redirect: "follow",
+        method: "GET",
       })
 
-      const effectiveUrl = response.url || url
+      const effectiveUrl = response.url || normalizedUrl
+      console.log(`[fetchPageMetadata] Response status: ${response.status}, effective URL: ${effectiveUrl}`)
 
       if (!response.ok) {
-        console.error(
-          `[fetchPageMetadata] Failed to fetch ${url}: ${response.status} ${response.statusText}`
-        )
+        console.error(`[fetchPageMetadata] HTTP error: ${response.status} ${response.statusText}`)
+        
+        // For 4xx errors, don't retry
+        if (response.status >= 400 && response.status < 500 && attempt < retryCount) {
+          console.log(`[fetchPageMetadata] Client error, skipping retries`)
+          break
+        }
         
         if (attempt < retryCount) {
           console.log(`[fetchPageMetadata] Retrying... (attempt ${attempt + 1}/${retryCount})`)
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
           continue
         }
         
         return { 
-          title: extractDomainTitle(url), 
+          title: extractDomainTitle(effectiveUrl), 
           description: "", 
           image: "", 
-          favicon: getDefaultFavicon(url) 
+          favicon: getDefaultFavicon(effectiveUrl) 
+        }
+      }
+
+      const contentType = response.headers.get('content-type') || ''
+      console.log(`[fetchPageMetadata] Content-Type: ${contentType}`)
+
+      if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+        console.warn(`[fetchPageMetadata] Non-HTML content type: ${contentType}`)
+        return {
+          title: extractDomainTitle(effectiveUrl),
+          description: "",
+          image: "",
+          favicon: getDefaultFavicon(effectiveUrl)
         }
       }
 
       const html = await response.text()
       
       if (!html || html.trim().length === 0) {
-        console.error(`[fetchPageMetadata] Empty response for ${url}`)
-        if (attempt < retryCount) continue
+        console.error(`[fetchPageMetadata] Empty HTML response`)
+        if (attempt < retryCount) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+          continue
+        }
         return { 
-          title: extractDomainTitle(url), 
+          title: extractDomainTitle(effectiveUrl), 
           description: "", 
           image: "", 
-          favicon: getDefaultFavicon(url) 
+          favicon: getDefaultFavicon(effectiveUrl) 
         }
       }
 
-      return parseHtmlMetadata(html, effectiveUrl)
+      console.log(`[fetchPageMetadata] HTML length: ${html.length}`)
+      const metadata = parseHtmlMetadata(html, effectiveUrl)
+      
+      // Validate that we got meaningful metadata
+      if (!metadata.title || metadata.title === extractDomainTitle(effectiveUrl)) {
+        if (attempt < retryCount) {
+          console.log(`[fetchPageMetadata] Poor metadata quality, retrying...`)
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+          continue
+        }
+      }
+
+      return metadata
 
     } catch (error) {
-      console.error(`[fetchPageMetadata] Attempt ${attempt} failed for ${url}:`, error)
+      console.error(`[fetchPageMetadata] Attempt ${attempt} failed for ${normalizedUrl}:`, error)
       
       if (attempt < retryCount) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        console.log(`[fetchPageMetadata] Waiting before retry...`)
+        await new Promise(resolve => setTimeout(resolve, 2000 * attempt))
         continue
       }
       
       return {
-        title: extractDomainTitle(url),
+        title: extractDomainTitle(normalizedUrl),
         description: "",
         image: "",
-        favicon: getDefaultFavicon(url),
+        favicon: getDefaultFavicon(normalizedUrl),
       }
     }
   }
 
+  // Final fallback
   return {
-    title: extractDomainTitle(url),
+    title: extractDomainTitle(normalizedUrl),
     description: "",
     image: "",
-    favicon: getDefaultFavicon(url),
+    favicon: getDefaultFavicon(normalizedUrl),
   }
 }
 
@@ -121,46 +172,102 @@ function parseHtmlMetadata(html: string, effectiveUrl: string) {
   let image = ""
   let favicon = ""
 
+  console.log(`[parseHtmlMetadata] Parsing HTML for: ${effectiveUrl}`)
+
   try {
-    const $ = cheerio.load(html)
+    const $ = cheerio.load(html, {
+  xml: {
+    decodeEntities: false 
+  }
+})
 
-    // Extract title with multiple fallbacks
-    title = 
-      $("meta[property='og:title']").attr("content")?.trim() ||
-      $("meta[name='twitter:title']").attr("content")?.trim() ||
-      $("meta[name='title']").attr("content")?.trim() ||
-      $("title").text()?.trim() ||
-      $("h1").first().text()?.trim() ||
-      extractDomainTitle(effectiveUrl)
+    // Extract title with comprehensive fallbacks
+    const titleCandidates = [
+      $("meta[property='og:title']").attr("content"),
+      $("meta[name='twitter:title']").attr("content"),
+      $("meta[property='twitter:title']").attr("content"),
+      $("meta[name='title']").attr("content"),
+      $("meta[itemprop='name']").attr("content"),
+      $("title").text(),
+      $("h1").first().text(),
+      $("h2").first().text()
+    ]
 
-    // Extract description with multiple fallbacks
-    description = 
-      $("meta[property='og:description']").attr("content")?.trim() ||
-      $("meta[name='description']").attr("content")?.trim() ||
-      $("meta[name='twitter:description']").attr("content")?.trim() ||
-      $("meta[itemprop='description']").attr("content")?.trim() ||
-      ""
+    for (const candidate of titleCandidates) {
+      const cleaned = candidate?.trim()
+      if (cleaned && cleaned.length > 0 && cleaned.length < 200) {
+        title = cleaned
+        break
+      }
+    }
 
-    // Extract image with multiple fallbacks
-    image = 
-      $("meta[property='og:image']").attr("content")?.trim() ||
-      $("meta[property='og:image:url']").attr("content")?.trim() ||
-      $("meta[name='twitter:image']").attr("content")?.trim() ||
-      $("meta[name='twitter:image:src']").attr("content")?.trim() ||
-      $("meta[itemprop='image']").attr("content")?.trim() ||
-      $("link[rel='image_src']").attr("href")?.trim() ||
-      ""
+    // Extract description with comprehensive fallbacks
+    const descriptionCandidates = [
+      $("meta[property='og:description']").attr("content"),
+      $("meta[name='description']").attr("content"),
+      $("meta[name='twitter:description']").attr("content"),
+      $("meta[property='twitter:description']").attr("content"),
+      $("meta[itemprop='description']").attr("content"),
+      $("meta[name='summary']").attr("content"),
+      $("p").first().text(),
+    ]
 
-    // Extract favicon with multiple fallbacks
-    favicon = 
-      $("link[rel='icon']").attr("href")?.trim() ||
-      $("link[rel='shortcut icon']").attr("href")?.trim() ||
-      $("link[rel='apple-touch-icon']").attr("href")?.trim() ||
-      $("link[rel='apple-touch-icon-precomposed']").attr("href")?.trim() ||
-      ""
+    for (const candidate of descriptionCandidates) {
+      const cleaned = candidate?.trim()
+      if (cleaned && cleaned.length > 10 && cleaned.length < 500) {
+        description = cleaned
+        break
+      }
+    }
+
+    // Extract image with comprehensive fallbacks
+    const imageCandidates = [
+      $("meta[property='og:image']").attr("content"),
+      $("meta[property='og:image:url']").attr("content"),
+      $("meta[name='twitter:image']").attr("content"),
+      $("meta[property='twitter:image']").attr("content"),
+      $("meta[name='twitter:image:src']").attr("content"),
+      $("meta[itemprop='image']").attr("content"),
+      $("link[rel='image_src']").attr("href"),
+      $("article img").first().attr("src"),
+      $("img").first().attr("src")
+    ]
+
+    for (const candidate of imageCandidates) {
+      const cleaned = candidate?.trim()
+      if (cleaned && cleaned.length > 0) {
+        image = cleaned
+        break
+      }
+    }
+
+    // Extract favicon with comprehensive fallbacks
+    const faviconCandidates = [
+      $("link[rel='icon']").attr("href"),
+      $("link[rel='shortcut icon']").attr("href"),
+      $("link[rel='apple-touch-icon']").attr("href"),
+      $("link[rel='apple-touch-icon-precomposed']").attr("href"),
+      $("link[rel='mask-icon']").attr("href"),
+      $("meta[name='msapplication-TileImage']").attr("content")
+    ]
+
+    for (const candidate of faviconCandidates) {
+      const cleaned = candidate?.trim()
+      if (cleaned && cleaned.length > 0) {
+        favicon = cleaned
+        break
+      }
+    }
+
+    console.log(`[parseHtmlMetadata] Raw extracted:`, {
+      title: title ? `${title.substring(0, 50)}...` : "none",
+      description: description ? `${description.substring(0, 50)}...` : "none",
+      image: image ? "found" : "none",
+      favicon: favicon ? "found" : "none"
+    })
 
   } catch (e) {
-    console.error("[fetchPageMetadata] Error parsing HTML:", e)
+    console.error("[parseHtmlMetadata] Error parsing HTML:", e)
     return {
       title: extractDomainTitle(effectiveUrl),
       description: "",
@@ -174,18 +281,34 @@ function parseHtmlMetadata(html: string, effectiveUrl: string) {
     const baseUrl = new URL(effectiveUrl)
 
     if (image && !image.startsWith("http")) {
-      image = new URL(image, baseUrl.origin).toString()
+      if (image.startsWith("//")) {
+        image = baseUrl.protocol + image
+      } else if (image.startsWith("/")) {
+        image = baseUrl.origin + image
+      } else {
+        image = new URL(image, baseUrl.origin).toString()
+      }
     }
 
     if (favicon && !favicon.startsWith("http")) {
-      favicon = new URL(favicon, baseUrl.origin).toString()
+      if (favicon.startsWith("//")) {
+        favicon = baseUrl.protocol + favicon
+      } else if (favicon.startsWith("/")) {
+        favicon = baseUrl.origin + favicon
+      } else {
+        favicon = new URL(favicon, baseUrl.origin).toString()
+      }
     }
   } catch (e) {
-    console.error("[fetchPageMetadata] Error resolving URLs:", e)
+    console.error("[parseHtmlMetadata] Error resolving URLs:", e)
   }
 
-  // Fallback for favicon
-  if (!favicon) {
+  // Apply fallbacks if needed
+  if (!title || title.length === 0) {
+    title = extractDomainTitle(effectiveUrl)
+  }
+
+  if (!favicon || favicon.length === 0) {
     favicon = getDefaultFavicon(effectiveUrl)
   }
 
@@ -193,24 +316,32 @@ function parseHtmlMetadata(html: string, effectiveUrl: string) {
   title = cleanupText(title)
   description = cleanupText(description)
 
-  // Validate image URL
+  // Validate URLs
   if (image && !isValidUrl(image)) {
+    console.warn(`[parseHtmlMetadata] Invalid image URL: ${image}`)
     image = ""
   }
 
-  console.log(`[fetchPageMetadata] Extracted metadata:`, {
-    title,
-    description: description ? `${description.substring(0, 50)}...` : "none",
-    hasImage: !!image,
-    hasFavicon: !!favicon,
-  })
+  if (favicon && !isValidUrl(favicon)) {
+    console.warn(`[parseHtmlMetadata] Invalid favicon URL: ${favicon}`)
+    favicon = getDefaultFavicon(effectiveUrl)
+  }
 
-  return {
+  const finalResult = {
     title,
     description,
     image,
     favicon,
   }
+
+  console.log(`[parseHtmlMetadata] Final metadata:`, {
+    title: finalResult.title,
+    description: finalResult.description ? `${finalResult.description.substring(0, 50)}...` : "none",
+    hasImage: !!finalResult.image,
+    hasFavicon: !!finalResult.favicon,
+  })
+
+  return finalResult
 }
 
 // ---- Enhanced YouTube Metadata Extraction ----
@@ -412,7 +543,7 @@ function extractDomainTitle(url: string): string {
         word.charAt(0).toUpperCase() + word.slice(1)
       ).join(' ')
   } catch {
-    return "Untitled"
+    return "Website"
   }
 }
 
@@ -431,14 +562,15 @@ function cleanupText(text: string): string {
   return text
     .replace(/\s+/g, " ")
     .replace(/[\r\n\t]/g, " ")
+    .replace(/[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, "") // Remove unusual characters
     .trim()
     .substring(0, 300) // Limit length
 }
 
 function isValidUrl(string: string): boolean {
   try {
-    new URL(string)
-    return true
+    const url = new URL(string)
+    return url.protocol === "http:" || url.protocol === "https:"
   } catch {
     return false
   }

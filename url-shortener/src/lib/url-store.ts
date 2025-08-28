@@ -15,34 +15,64 @@ export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   
   const hasGenericTitle = !data.title || 
                          data.title.includes('YouTube') || 
-                         data.title.includes('Video');
+                         data.title.includes('Video') ||
+                         data.title.length < 3;
   
   const hasGenericDescription = !data.description || 
                                data.description.includes('Enjoy the videos and music') ||
                                data.description.includes('Upload original content') ||
-                               data.description.includes('Music video by');
+                               data.description.includes('Music video by') ||
+                               data.description.length < 10;
   
-  return hasGenericTitle || hasGenericDescription;
+  const hasNoImage = !data.image || data.image.includes('google.com/s2/favicons');
+  
+  return hasGenericTitle && hasGenericDescription && hasNoImage;
 }
 
 export async function updateUrlData(shortCode: string, partial: Partial<UrlData>): Promise<UrlData | null> {
-  const existing = await getUrlFromKV(shortCode);
-  if (!existing) return null;
-  const merged: UrlData = {
-    ...existing,
-    ...partial,
-  };
-  await saveUrlToKV(shortCode, merged);
-  return merged;
+  try {
+    const existing = await getUrlFromKV(shortCode);
+    if (!existing) {
+      console.warn(`[updateUrlData] No existing data found for shortCode: ${shortCode}`);
+      return null;
+    }
+
+    // Merge with existing data, preferring new data when it's better
+    const merged: UrlData = {
+      originalUrl: existing.originalUrl,
+      title: partial.title && partial.title.length > 3 ? partial.title : existing.title,
+      description: partial.description && partial.description.length > 10 ? partial.description : existing.description,
+      image: partial.image && !partial.image.includes('google.com/s2/favicons') ? partial.image : existing.image,
+      favicon: partial.favicon ? partial.favicon : existing.favicon,
+    };
+
+    await saveUrlToKV(shortCode, merged);
+    console.log(`[updateUrlData] Successfully updated metadata for ${shortCode}`);
+    return merged;
+  } catch (error) {
+    console.error(`[updateUrlData] Error updating URL data for ${shortCode}:`, error);
+    return null;
+  }
 }
 
 export async function getUrlFromKV(shortCode: string): Promise<UrlData | null> {
-  const data = await kv.get<UrlData>(`url:${shortCode}`);
-  return data;
+  try {
+    const data = await kv.get<UrlData>(`url:${shortCode}`);
+    return data;
+  } catch (error) {
+    console.error(`[getUrlFromKV] Error retrieving URL data for ${shortCode}:`, error);
+    return null;
+  }
 }
 
 export async function saveUrlToKV(shortCode: string, data: UrlData) {
-  await kv.set(`url:${shortCode}`, data)
+  try {
+    await kv.set(`url:${shortCode}`, data);
+    console.log(`[saveUrlToKV] Successfully saved data for ${shortCode}`);
+  } catch (error) {
+    console.error(`[saveUrlToKV] Error saving URL data for ${shortCode}:`, error);
+    throw error;
+  }
 }
 
 export async function getUrl(shortCode: string): Promise<UrlData | null> {
@@ -54,17 +84,30 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     throw new Error('Invalid URL provided');
   }
 
+  console.log(`[createShortCode] Creating short code for: ${url}`);
+
   const normalizedUrl = normalizeUrl(url);
+  console.log(`[createShortCode] Normalized URL: ${normalizedUrl}`);
 
   // Check if URL already exists in KV using a direct lookup
-  const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`);
+  try {
+    const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`);
 
-  if (existingShortCode) {
-    // Verify the short code still exists in KV
-    const existingData = await getUrlFromKV(existingShortCode);
-    if (existingData) {
-      return existingShortCode;
+    if (existingShortCode) {
+      console.log(`[createShortCode] Found existing short code: ${existingShortCode}`);
+      // Verify the short code still exists in KV
+      const existingData = await getUrlFromKV(existingShortCode);
+      if (existingData) {
+        console.log(`[createShortCode] Reusing existing short code: ${existingShortCode}`);
+        return existingShortCode;
+      } else {
+        console.warn(`[createShortCode] Orphaned URL mapping found, will create new short code`);
+        // Clean up the orphaned mapping
+        await kv.del(`url_to_code:${normalizedUrl}`);
+      }
     }
+  } catch (error) {
+    console.error(`[createShortCode] Error checking existing URL:`, error);
   }
 
   // Generate unique short code
@@ -81,43 +124,75 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   } while (await getUrlFromKV(shortCode));
 
-  // Use the provided metadata (which should already be fetched from the route)
-  // Only fetch fresh metadata if none was provided
+  console.log(`[createShortCode] Generated unique short code: ${shortCode}`);
+
+  // Prepare metadata - use provided metadata or fetch fresh
   let enhancedMetadata = metadata || {};
   
-  if (Object.keys(enhancedMetadata).length === 0) {
+  if (Object.keys(enhancedMetadata).length === 0 || isWeakMetadata(enhancedMetadata)) {
     try {
-      console.log(`[createShortCode] Fetching metadata for: ${url}`);
-      const fetchedMetadata = await fetchPageMetadata(url);
-      enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
+      console.log(`[createShortCode] Fetching fresh metadata for: ${normalizedUrl}`);
+      const fetchedMetadata = await fetchPageMetadata(normalizedUrl);
+      
+      // Only use fetched metadata if it's better than what we have
+      enhancedMetadata = {
+        title: fetchedMetadata.title && fetchedMetadata.title.length > 3 ? fetchedMetadata.title : enhancedMetadata.title,
+        description: fetchedMetadata.description && fetchedMetadata.description.length > 10 ? fetchedMetadata.description : enhancedMetadata.description,
+        image: fetchedMetadata.image && !fetchedMetadata.image.includes('google.com/s2/favicons') ? fetchedMetadata.image : enhancedMetadata.image,
+        favicon: fetchedMetadata.favicon ? fetchedMetadata.favicon : enhancedMetadata.favicon,
+      };
+      
+      console.log(`[createShortCode] Enhanced metadata:`, {
+        title: enhancedMetadata.title ? `${enhancedMetadata.title.substring(0, 50)}...` : 'none',
+        description: enhancedMetadata.description ? `${enhancedMetadata.description.substring(0, 50)}...` : 'none',
+        hasImage: !!enhancedMetadata.image,
+        hasFavicon: !!enhancedMetadata.favicon,
+      });
     } catch (error) {
-      console.error('Error fetching enhanced metadata:', error);
+      console.error(`[createShortCode] Error fetching enhanced metadata:`, error);
       // Fallback to domain-based metadata
       enhancedMetadata = {
-        title: extractDomainTitle(url),
-        favicon: getDefaultFavicon(url)
+        title: enhancedMetadata.title || extractDomainTitle(normalizedUrl),
+        description: enhancedMetadata.description || "",
+        image: enhancedMetadata.image || "",
+        favicon: enhancedMetadata.favicon || getDefaultFavicon(normalizedUrl)
       };
     }
   }
 
-  // Store the data in KV
+  // Ensure we have at least basic metadata
   const urlData: UrlData = {
-    originalUrl: url,
-    title: enhancedMetadata?.title,
-    description: enhancedMetadata?.description,
-    image: enhancedMetadata?.image,
-    favicon: enhancedMetadata?.favicon,
+    originalUrl: normalizedUrl,
+    title: enhancedMetadata.title || extractDomainTitle(normalizedUrl),
+    description: enhancedMetadata.description || "",
+    image: enhancedMetadata.image || "",
+    favicon: enhancedMetadata.favicon || getDefaultFavicon(normalizedUrl),
   }
   
-  await saveUrlToKV(shortCode, urlData);
-  await kv.set(`url_to_code:${normalizedUrl}`, shortCode);
+  console.log(`[createShortCode] Final URL data:`, {
+    originalUrl: urlData.originalUrl,
+    title: urlData.title,
+    description: urlData.description ? `${urlData.description.substring(0, 50)}...` : 'none',
+    hasImage: !!urlData.image,
+    hasFavicon: !!urlData.favicon,
+  });
+
+  // Store the data in KV with error handling
+  try {
+    await saveUrlToKV(shortCode, urlData);
+    await kv.set(`url_to_code:${normalizedUrl}`, shortCode);
+    console.log(`[createShortCode] Successfully created short code: ${shortCode}`);
+  } catch (error) {
+    console.error(`[createShortCode] Error storing data:`, error);
+    throw new Error('Failed to store URL data');
+  }
 
   return shortCode;
 }
 
 function normalizeUrl(url: string): string {
   try {
-    let urlToNormalize = url;
+    let urlToNormalize = url.trim();
     
     if (!urlToNormalize.startsWith('http://') && !urlToNormalize.startsWith('https://')) {
       urlToNormalize = 'https://' + urlToNormalize;
@@ -125,14 +200,17 @@ function normalizeUrl(url: string): string {
     
     const urlObj = new URL(urlToNormalize);
     
+    // Normalize hostname to lowercase
+    urlObj.hostname = urlObj.hostname.toLowerCase();
+    
     let normalized = urlObj.toString();
     
-    if (normalized.endsWith('/')) {
+    // Remove trailing slash for consistency
+    if (normalized.endsWith('/') && urlObj.pathname === '/') {
       normalized = normalized.slice(0, -1);
     }
     
-    const hostname = urlObj.hostname.toLowerCase();
-    normalized = normalized.replace(urlObj.hostname, hostname);
+    console.log(`[normalizeUrl] ${url} -> ${normalized}`);
     
     return normalized;
   } catch (error) {
@@ -160,7 +238,7 @@ function extractDomainTitle(url: string): string {
         word.charAt(0).toUpperCase() + word.slice(1)
       ).join(' ');
   } catch {
-    return "Untitled";
+    return "Website";
   }
 }
 
