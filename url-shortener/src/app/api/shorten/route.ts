@@ -5,7 +5,6 @@ import { fetchPageMetadata } from "@/lib/utils";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
 
-// Enhanced URL validation and normalization
 function validateAndNormalizeUrl(url: string): string {
   let urlToParse = url.trim();
   
@@ -85,7 +84,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate and normalize URL
     let normalizedUrl: string;
     try {
       normalizedUrl = validateAndNormalizeUrl(url);
@@ -105,7 +103,6 @@ export async function POST(request: NextRequest) {
         if (existingData) {
           console.log(`[POST] Found existing short code: ${existingShortCode}`);
           
-          // For YouTube URLs or weak metadata, try to refresh
           const shouldRefresh = isYouTubeUrl(normalizedUrl) || isWeakMetadata(existingData);
           
           if (shouldRefresh) {
@@ -113,7 +110,6 @@ export async function POST(request: NextRequest) {
               console.log(`[POST] Refreshing metadata for existing URL`);
               const freshMetadata = await fetchPageMetadata(normalizedUrl);
               
-              // Only update if we got significantly better metadata
               if (freshMetadata.description && 
                   (!existingData.description || freshMetadata.description.length > existingData.description.length + 50)) {
                 await refreshUrlMetadata(existingShortCode, true);
@@ -134,9 +130,9 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       console.error('Error checking existing URL:', error);
+      // Continue with creating a new short code if checking fails
     }
 
-    // Handle custom code if provided
     if (customCode) {
       if (!/^[a-zA-Z0-9_-]{4,20}$/.test(customCode)) {
         return NextResponse.json(

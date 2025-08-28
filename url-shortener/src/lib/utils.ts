@@ -51,7 +51,7 @@ export async function fetchYouTubeMetadata(url: string): Promise<{
       () => extractFromEmbedPage(videoId!)
     ];
     
-    let bestResult: { title?: string; description?: string; image?: string; favicon?: string } = {};
+    const bestResult: { title?: string; description?: string; image?: string; favicon?: string } = {};
     
     for (const method of methods) {
       try {
@@ -400,17 +400,18 @@ function extractMetadataFromHTML(html: string): {
 }
 
 // Enhanced ytInitialData extraction
-function extractDescriptionFromYtData(data: any): string | undefined {
+function extractDescriptionFromYtData(data: Record<string, unknown>): string | undefined {
   try {
-    // Primary path - video details
-    if (data?.videoDetails?.shortDescription) {
-      const desc = cleanYouTubeString(data.videoDetails.shortDescription);
+  
+    const videoDetails = data?.videoDetails as Record<string, unknown>;
+    if (videoDetails?.shortDescription && typeof videoDetails.shortDescription === 'string') {
+      const desc = cleanYouTubeString(videoDetails.shortDescription);
       if (desc && desc.length > 20) {
         return desc;
       }
     }
     
-    // Secondary path - contents structure
+   
     const paths = [
       'contents.twoColumnWatchNextResults.results.results.contents',
       'contents.twoColumnWatchNextResults.results.results',
@@ -441,50 +442,57 @@ function extractDescriptionFromYtData(data: any): string | undefined {
       }
     }
     
-    // Tertiary path - try to find any description field
+   
     const description = findDescriptionInObject(data);
     if (description && description.length > 20) {
       return description;
     }
     
-  } catch (error) {
+   } catch (error) {
     console.error('Error in extractDescriptionFromYtData:', error);
   }
-  
   return undefined;
 }
 
-// Helper function to get nested values safely
-function getNestedValue(obj: any, path: string): any {
-  return path.split('.').reduce((current, key) => current?.[key], obj);
+
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  return path.split('.').reduce((current: unknown, key: string) => {
+    if (current && typeof current === 'object' && key in (current as Record<string, unknown>)) {
+      return (current as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, obj);
 }
 
-// Recursively find description in complex objects
-function findDescriptionInObject(obj: any, visited = new Set()): string | undefined {
+
+
+function findDescriptionInObject(obj: unknown, visited = new Set()): string | undefined {
   if (!obj || typeof obj !== 'object' || visited.has(obj)) {
     return undefined;
   }
   
   visited.add(obj);
   
+  const objRecord = obj as Record<string, unknown>;
+  
   // Check if current object has description
-  if (obj.shortDescription && typeof obj.shortDescription === 'string') {
-    const desc = cleanYouTubeString(obj.shortDescription);
+  if (objRecord.shortDescription && typeof objRecord.shortDescription === 'string') {
+    const desc = cleanYouTubeString(objRecord.shortDescription);
     if (desc.length > 20) return desc;
   }
   
-  if (obj.description) {
-    if (typeof obj.description === 'string') {
-      const desc = cleanYouTubeString(obj.description);
+  if (objRecord.description) {
+    if (typeof objRecord.description === 'string') {
+      const desc = cleanYouTubeString(objRecord.description);
       if (desc.length > 20) return desc;
-    } else if (typeof obj.description === 'object') {
-      const desc = extractTextFromComplexStructure(obj.description);
+    } else if (typeof objRecord.description === 'object') {
+      const desc = extractTextFromComplexStructure(objRecord.description);
       if (desc && desc.length > 20) return desc;
     }
   }
   
   // Recursively search in arrays and objects
-  for (const [key, value] of Object.entries(obj)) {
+  for (const [key, value] of Object.entries(objRecord)) {
     if (Array.isArray(value)) {
       for (const item of value) {
         const found = findDescriptionInObject(item, visited);
@@ -499,34 +507,37 @@ function findDescriptionInObject(obj: any, visited = new Set()): string | undefi
   return undefined;
 }
 
-// Extract text from complex YouTube data structures
-function extractTextFromComplexStructure(descriptionObj: any): string | undefined {
+function extractTextFromComplexStructure(descriptionObj: unknown): string | undefined {
   try {
     if (typeof descriptionObj === 'string') {
       return cleanYouTubeString(descriptionObj);
     }
     
-    // Handle runs array
-    if (descriptionObj?.runs && Array.isArray(descriptionObj.runs)) {
-      const text = descriptionObj.runs
-        .map((run: any) => run.text || '')
-        .join('')
-        .trim();
-      return cleanYouTubeString(text);
-    }
-    
-    // Handle simpleText
-    if (descriptionObj?.simpleText) {
-      return cleanYouTubeString(descriptionObj.simpleText);
-    }
-    
-    // Handle content array
-    if (descriptionObj?.content && Array.isArray(descriptionObj.content)) {
-      const text = descriptionObj.content
-        .map((item: any) => item.text || '')
-        .join('')
-        .trim();
-      return cleanYouTubeString(text);
+    if (descriptionObj && typeof descriptionObj === 'object') {
+      const descObj = descriptionObj as Record<string, unknown>;
+      
+      // Handle runs array
+      if (descObj.runs && Array.isArray(descObj.runs)) {
+        const text = (descObj.runs as Array<Record<string, unknown>>)
+          .map((run: Record<string, unknown>) => run.text || '')
+          .join('')
+          .trim();
+        return cleanYouTubeString(text as string);
+      }
+      
+      // Handle simpleText
+      if (descObj.simpleText && typeof descObj.simpleText === 'string') {
+        return cleanYouTubeString(descObj.simpleText);
+      }
+      
+      // Handle content array
+      if (descObj.content && Array.isArray(descObj.content)) {
+        const text = (descObj.content as Array<Record<string, unknown>>)
+          .map((item: Record<string, unknown>) => item.text || '')
+          .join('')
+          .trim();
+        return cleanYouTubeString(text as string);
+      }
     }
     
   } catch (error) {
@@ -536,16 +547,15 @@ function extractTextFromComplexStructure(descriptionObj: any): string | undefine
   return undefined;
 }
 
-// Alternative description extraction for edge cases
 function tryAlternativeDescriptionExtraction(html: string): string | undefined {
   const patterns = [
-    // JSON-LD structured data
+   
     /"description":\s*"([^"]{100,}(?:\\.[^"]*)*)"/g,
-    // Schema.org microdata
+ 
     /itemprop="description"[^>]*content="([^"]{50,})"/,
-    // Alternative meta patterns
+   
     /<meta[^>]+name="description"[^>]+content="([^"]{50,})"/i,
-    // Video schema
+  
     /"VideoObject"[^}]*"description":\s*"([^"]{50,}(?:\\.[^"]*)*)"/,
   ];
   
