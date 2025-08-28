@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createShortCode, getUrl, isWeakMetadata, updateUrlData } from "@/lib/url-store"
+import { createShortCode, getUrl, getAllUrls } from "@/lib/url-store"
 import { kv } from "@vercel/kv";
-// import { fetchPageMetadataFast } from "@/lib/utils-fast"; 
+import { fetchPageMetadata } from "@/lib/utils"; // Import fetchPageMetadata
+import { isWeakMetadata, updateUrlData } from "@/lib/url-store";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
+
+// Removed the extractMetadata function, as it's now handled by fetchPageMetadata in utils.ts
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,12 +34,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-    // Check if URL already exists
+
     try {
       const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`)
       
-      if (existingShortCode && !force) {
+      if (existingShortCode) {
         const existingData = await getUrl(existingShortCode);
+        // If existing metadata is weak or user forces refresh, try to re-scrape and update
+        if (force || isWeakMetadata(existingData)) {
+          try {
+            console.log(`[shorten] Refreshing metadata for existing URL: ${normalizedUrl}`);
+            const fresh = await fetchPageMetadata(normalizedUrl);
+            const improved = await updateUrlData(existingShortCode, fresh);
+            return NextResponse.json({
+              shortCode: existingShortCode,
+              metadata: improved ?? existingData
+            });
+          } catch (refreshError) {
+            console.error('Error refreshing metadata for existing URL:', refreshError);
+          }
+        }
         return NextResponse.json({
           shortCode: existingShortCode,
           metadata: existingData
@@ -44,29 +61,19 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       console.error('Error checking existing URL:', error);
+     
     }
 
-    // Create short code first with basic metadata
-    const basicMetadata = {
-      title: new URL(normalizedUrl).hostname,
-      description: undefined,
-      image: undefined,
-      favicon: `https://www.google.com/s2/favicons?domain=${new URL(normalizedUrl).hostname}&sz=128`
-    };
     
-    const shortCode = await createShortCode(normalizedUrl, basicMetadata);
+    const metadata = await fetchPageMetadata(normalizedUrl); // Use fetchPageMetadata
     
-    // Return immediately with basic metadata
-    const response = NextResponse.json({
+  
+    const shortCode = await createShortCode(normalizedUrl, metadata);
+    
+    return NextResponse.json({
       shortCode,
-      metadata: basicMetadata
+      metadata
     });
-
-    // Trigger background metadata enhancement (fire and forget)
-    // This will update the stored data without making the user wait
-    enhanceMetadataInBackground(shortCode, normalizedUrl).catch(console.error);
-    
-    return response;
     
   } catch (error) {
     console.error('Error shortening URL:', error);
@@ -74,20 +81,5 @@ export async function POST(request: NextRequest) {
       { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
-  }
-}
-
-// Background function to enhance metadata without blocking the response
-async function enhanceMetadataInBackground(shortCode: string, url: string) {
-  try {
-    console.log(`[Background] Starting metadata enhancement for: ${url}`);
-    const enhancedMetadata = await fetchPageMetadataFast(url);
-    
-    if (enhancedMetadata.title || enhancedMetadata.description || enhancedMetadata.image) {
-      await updateUrlData(shortCode, enhancedMetadata);
-      console.log(`[Background] Enhanced metadata for ${shortCode}:`, enhancedMetadata);
-    }
-  } catch (error) {
-    console.error(`[Background] Failed to enhance metadata for ${shortCode}:`, error);
   }
 }

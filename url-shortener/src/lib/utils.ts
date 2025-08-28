@@ -156,22 +156,59 @@ export async function fetchPageMetadata(url: string) {
         $("link[rel='shortcut icon']").attr("href") ||
         $("link[rel='apple-touch-icon']").attr("href") ||
         $("link[rel='apple-touch-icon-precomposed']").attr("href");
-      // YouTube specific: extract real video description from inline JSON
+      // YouTube specific: override generic site description with actual video shortDescription
       try {
-        const isYouTube = /(^|\.)youtube\.com$/.test(new URL(effectiveUrl).hostname) || new URL(effectiveUrl).hostname === "youtu.be";
+        const ytUrl = new URL(effectiveUrl);
+        const isYouTube = /(^|\.)youtube\.com$/.test(ytUrl.hostname) || ytUrl.hostname === "youtu.be";
         if (isYouTube) {
-          if (!description) {
-            const match = html.match(/\"shortDescription\":\"([\s\S]*?)\"/);
-            if (match && match[1]) {
-              const unescaped = match[1]
-                .replace(/\\n/g, "\n")
+          const isGeneric = !description || description.toLowerCase().includes("enjoy the videos and music you love");
+
+          const pickShortDesc = (text: string): string | undefined => {
+            const m = text.match(/\"shortDescription\":\"([\s\S]*?)\"/);
+            if (m && m[1]) {
+              const unescaped = m[1]
+                .replace(/\\n/g, " \u2028 ")
                 .replace(/\\"/g, '"')
                 .replace(/\\u([0-9a-fA-F]{4})/g, (_m, g1) => String.fromCharCode(parseInt(g1, 16)))
+                .replace(/\s+/g, ' ')
                 .trim();
-              if (unescaped) {
-                description = unescaped;
+              return unescaped;
+            }
+            return undefined;
+          };
+
+          // Try from original HTML first
+          let shortDesc = pickShortDesc(html);
+
+          // If not found, fetch a readable copy via Jina reader using the canonical watch URL
+          if (!shortDesc || shortDesc.length < 10 || isGeneric) {
+            // Extract video id from url
+            let vid: string | undefined = ytUrl.searchParams.get('v') || undefined;
+            if (!vid && ytUrl.hostname === 'youtu.be') {
+              const parts = ytUrl.pathname.split('/').filter(Boolean);
+              vid = parts[0];
+            }
+            if (vid) {
+              const jinaTargets = [
+                `https://r.jina.ai/https://www.youtube.com/watch?v=${vid}`,
+                `https://r.jina.ai/http://www.youtube.com/watch?v=${vid}`,
+                `https://r.jina.ai/https://m.youtube.com/watch?v=${vid}`,
+              ];
+              for (const jt of jinaTargets) {
+                try {
+                  const jr = await fetch(jt, { cache: 'no-store' });
+                  if (jr.ok) {
+                    const jtHtml = await jr.text();
+                    shortDesc = pickShortDesc(jtHtml) || cheerio.load(jtHtml)("meta[name='description']").attr('content') || shortDesc;
+                    if (shortDesc && shortDesc.length > 10) break;
+                  }
+                } catch {}
               }
             }
+          }
+
+          if (shortDesc && (isGeneric || shortDesc.length > (description?.length || 0))) {
+            description = shortDesc;
           }
         }
       } catch {}
