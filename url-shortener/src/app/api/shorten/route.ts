@@ -6,8 +6,6 @@ import { isWeakMetadata, updateUrlData } from "@/lib/url-store";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
 
-
-
 export async function POST(request: NextRequest) {
   try {
     const { url, force } = await request.json()
@@ -34,14 +32,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-
+    // Check if URL already exists
     try {
       const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`)
       
       if (existingShortCode) {
         const existingData = await getUrl(existingShortCode);
+        
         // If existing metadata is weak or user forces refresh, try to re-scrape and update
-        if (force || isWeakMetadata(existingData)) {
+        if (force || (existingData && isWeakMetadata(existingData))) {
           try {
             console.log(`[shorten] Refreshing metadata for existing URL: ${normalizedUrl}`);
             const fresh = await fetchPageMetadata(normalizedUrl);
@@ -52,6 +51,7 @@ export async function POST(request: NextRequest) {
             });
           } catch (refreshError) {
             console.error('Error refreshing metadata for existing URL:', refreshError);
+            // Continue with existing data if refresh fails
           }
         }
         return NextResponse.json({
@@ -61,18 +61,34 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       console.error('Error checking existing URL:', error);
-     
+      // Continue to create new short code if check fails
     }
 
-    
-    const metadata = await fetchPageMetadata(normalizedUrl); 
-    
-    // Create short code
+    // For NEW URLs: Fetch metadata FIRST before creating short code
+    let metadata;
+    try {
+      console.log(`[shorten] Fetching metadata for new URL: ${normalizedUrl}`);
+      metadata = await fetchPageMetadata(normalizedUrl);
+      console.log(`[shorten] Metadata fetched:`, {
+        title: metadata?.title,
+        description: metadata?.description ? `${metadata.description.substring(0, 50)}...` : 'none',
+        hasImage: !!metadata?.image,
+        hasFavicon: !!metadata?.favicon
+      });
+    } catch (metadataError) {
+      console.error('Error fetching metadata for new URL:', metadataError);
+      metadata = {}; // Use empty metadata as fallback
+    }
+
+ 
     const shortCode = await createShortCode(normalizedUrl, metadata);
+    
+ 
+    const finalData = await getUrl(shortCode);
     
     return NextResponse.json({
       shortCode,
-      metadata
+      metadata: finalData
     });
     
   } catch (error) {

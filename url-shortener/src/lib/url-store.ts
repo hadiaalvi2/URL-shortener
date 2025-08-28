@@ -81,17 +81,18 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   } while (await getUrlFromKV(shortCode));
 
-  // Always fetch fresh metadata for ALL URLs to ensure we have the best data
+  // Use the provided metadata (which should already be fetched from the route)
+  // Only fetch fresh metadata if none was provided
   let enhancedMetadata = metadata || {};
   
-  try {
-    console.log(`Fetching enhanced metadata for: ${url}`);
-    const fetchedMetadata = await fetchPageMetadata(url);
-    enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
-  } catch (error) {
-    console.error('Error fetching enhanced metadata:', error);
-    // If we have some metadata from the client, use it as fallback
-    if (Object.keys(enhancedMetadata).length === 0) {
+  if (Object.keys(enhancedMetadata).length === 0) {
+    try {
+      console.log(`[createShortCode] Fetching metadata for: ${url}`);
+      const fetchedMetadata = await fetchPageMetadata(url);
+      enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
+    } catch (error) {
+      console.error('Error fetching enhanced metadata:', error);
+      // Fallback to domain-based metadata
       enhancedMetadata = {
         title: extractDomainTitle(url),
         favicon: getDefaultFavicon(url)
