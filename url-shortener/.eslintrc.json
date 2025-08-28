@@ -7,8 +7,3 @@
     "@next/next/no-img-element": "off"
   }
 }
-{
-  "rules": {
-    "prefer-const": "off"
-  }
-}
