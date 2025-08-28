@@ -81,17 +81,21 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     }
   } while (await getUrlFromKV(shortCode));
 
-  // For YouTube URLs, always fetch fresh metadata
-  const isYouTube = normalizedUrl.includes('youtube.com') || normalizedUrl.includes('youtu.be');
+  // Always fetch fresh metadata for ALL URLs to ensure we have the best data
   let enhancedMetadata = metadata || {};
   
-  if (isYouTube || isWeakMetadata(metadata)) {
-    try {
-      console.log(`Fetching enhanced metadata for: ${url}`);
-      const fetchedMetadata = await fetchPageMetadata(url);
-      enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
-    } catch (error) {
-      console.error('Error fetching enhanced metadata:', error);
+  try {
+    console.log(`Fetching enhanced metadata for: ${url}`);
+    const fetchedMetadata = await fetchPageMetadata(url);
+    enhancedMetadata = { ...enhancedMetadata, ...fetchedMetadata };
+  } catch (error) {
+    console.error('Error fetching enhanced metadata:', error);
+    // If we have some metadata from the client, use it as fallback
+    if (Object.keys(enhancedMetadata).length === 0) {
+      enhancedMetadata = {
+        title: extractDomainTitle(url),
+        favicon: getDefaultFavicon(url)
+      };
     }
   }
 
@@ -143,5 +147,27 @@ export async function getOriginalUrl(shortCode: string): Promise<string | null> 
   } catch (error) {
     console.error('Error getting original URL:', error);
     return null;
+  }
+}
+
+// Add these helper functions at the bottom of the file
+function extractDomainTitle(url: string): string {
+  try {
+    const domain = new URL(url).hostname;
+    return domain.replace('www.', '').replace(/\.[^.]+$/, '')
+      .split('.').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ');
+  } catch {
+    return "Untitled";
+  }
+}
+
+function getDefaultFavicon(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`;
+  } catch {
+    return "/favicon.ico";
   }
 }
