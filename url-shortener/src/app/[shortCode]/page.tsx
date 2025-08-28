@@ -15,7 +15,6 @@ const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!
 function isSocialMediaBot(userAgent: string): boolean {
   const ua = userAgent.toLowerCase();
   
-  // More comprehensive bot detection
   const socialBots = [
     'facebookexternalhit',
     'twitterbot',
@@ -36,10 +35,8 @@ function isSocialMediaBot(userAgent: string): boolean {
     'baiduspider',
     'crawler',
     'spider',
-    // Meta's new crawlers
     'meta-externalagent',
     'meta-externalhit',
-    // Additional common social media crawlers
     'instagrambot',
     'snapchatbot',
     'tumblrbot',
@@ -67,9 +64,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     const original = data.originalUrl ? new URL(data.originalUrl) : null
 
-    // Always try to refresh metadata for social media previews
+    // Force refresh metadata for YouTube URLs to get better description
     try {
-      if (isWeakMetadata(data)) {
+      if (data.originalUrl && (data.originalUrl.includes('youtube.com') || data.originalUrl.includes('youtu.be'))) {
+        console.log('[generateMetadata] Force refreshing YouTube metadata')
+        const fresh = await fetchPageMetadata(data.originalUrl)
+        const improved = await updateUrlData(shortCode, fresh)
+        if (improved) {
+          data = improved
+        }
+      } else if (isWeakMetadata(data)) {
         const fresh = await fetchPageMetadata(data.originalUrl)
         const improved = await updateUrlData(shortCode, fresh)
         if (improved) {
@@ -114,7 +118,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         description,
         images: imageUrl ? [imageUrl] : [],
       },
-      // Additional metadata for better social sharing
       other: {
         'og:site_name': 'URL Shortener',
         'twitter:domain': metadataBase.hostname,
@@ -225,7 +228,7 @@ export default async function RedirectPage(props: Props) {
           const urlObj = new URL(data.originalUrl);
           favicon = `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`;
         } catch {
-          favicon = '/favicon.ico'; // Default fallback
+          favicon = '/favicon.ico';
         }
       }
 

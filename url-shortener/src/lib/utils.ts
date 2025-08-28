@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 async function safeFetch(
   url: string,
   options: RequestInit = {},
-  timeout = 15000
+  timeout = 20000 // Increased timeout for YouTube
 ): Promise<Response> {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeout)
@@ -19,13 +19,17 @@ async function safeFetch(
       ...options,
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; URL-Shortener/1.0; +https://example.com/bot)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
         ...options.headers,
       },
     })
@@ -230,7 +234,7 @@ async function fetchYouTubeMetadata(url: string): Promise<{
       }
     }
 
-    // Method 1: Try YouTube Data API if available
+    // Method 1: Try YouTube Data API if available (most reliable)
     const apiKey = process.env.YOUTUBE_API_KEY;
     if (apiKey) {
       try {
@@ -259,11 +263,84 @@ async function fetchYouTubeMetadata(url: string): Promise<{
           }
         }
       } catch (apiError) {
-        console.log("[fetchYouTubeMetadata] API failed, trying oEmbed:", apiError)
+        console.log("[fetchYouTubeMetadata] API failed, trying direct scrape:", apiError)
       }
     }
 
-    // Method 2: Try oEmbed
+    // Method 2: Direct scrape with enhanced parsing
+    try {
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
+      const response = await safeFetch(youtubeUrl, {
+        headers: {
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      })
+
+      if (response.ok) {
+        const html = await response.text()
+        const $ = cheerio.load(html)
+        
+        // Extract title
+        const title =
+          $('meta[property="og:title"]').attr("content")?.trim() ||
+          $("title").text().replace(" - YouTube", "").trim() ||
+          "YouTube Video"
+
+        // Extract description - try multiple approaches
+        let description = ""
+        
+        // Try JSON-LD data (most reliable for description)
+        try {
+          const jsonLdScript = $('script[type="application/ld+json"]').html()
+          if (jsonLdScript) {
+            const jsonLd = JSON.parse(jsonLdScript)
+            if (jsonLd.description) {
+              description = jsonLd.description
+            }
+          }
+        } catch (e) {
+          console.log("Failed to parse JSON-LD:", e)
+        }
+        
+        // Fallback to meta tags
+        if (!description) {
+          description =
+            $('meta[property="og:description"]').attr("content")?.trim() ||
+            $('meta[name="description"]').attr("content")?.trim() ||
+            ""
+        }
+        
+        // Clean up generic YouTube descriptions
+        if (!description || 
+            description.includes("Enjoy the videos") || 
+            description.includes("Upload original content") ||
+            description.includes("Music video by")) {
+          description = `Watch "${title}" on YouTube`
+        }
+
+        // Extract image
+        const imageUrl =
+          $('meta[property="og:image"]').attr("content")?.trim() ||
+          $('link[rel="image_src"]').attr("href")?.trim() ||
+          `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+
+        console.log(`[fetchYouTubeMetadata] Direct scrape success:`, { 
+          title,
+          description: description ? `${description.substring(0, 50)}...` : "none"
+        })
+
+        return {
+          title,
+          description: description.substring(0, 300),
+          image: imageUrl,
+          favicon: "https://www.youtube.com/favicon.ico",
+        }
+      }
+    } catch (scrapeError) {
+      console.log("[fetchYouTubeMetadata] Direct scrape failed:", scrapeError)
+    }
+
+    // Method 3: Try oEmbed as last resort
     try {
       const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
       const response = await safeFetch(oEmbedUrl)
@@ -286,54 +363,7 @@ async function fetchYouTubeMetadata(url: string): Promise<{
         }
       }
     } catch (oEmbedError) {
-      console.log("[fetchYouTubeMetadata] oEmbed failed, trying direct scrape:", oEmbedError)
-    }
-
-    // Method 3: Direct scrape as fallback
-    try {
-      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
-      const response = await safeFetch(youtubeUrl, {
-        headers: {
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-      })
-
-      if (response.ok) {
-        const html = await response.text()
-        const $ = cheerio.load(html)
-
-        const title =
-          $('meta[property="og:title"]').attr("content")?.trim() ||
-          $("title").text().replace(" - YouTube", "").trim() ||
-          "YouTube Video"
-
-        let description =
-          $('meta[property="og:description"]').attr("content")?.trim() ||
-          $('meta[name="description"]').attr("content")?.trim() ||
-          ""
-
-        // Clean up generic YouTube descriptions
-        if (!description || 
-            description.includes("Enjoy the videos") || 
-            description.includes("Upload original content")) {
-          description = `Watch "${title}" on YouTube`
-        }
-
-        const imageUrl =
-          $('meta[property="og:image"]').attr("content")?.trim() ||
-          `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-
-        console.log(`[fetchYouTubeMetadata] Direct scrape success:`, { title })
-
-        return {
-          title,
-          description: description.substring(0, 300),
-          image: imageUrl,
-          favicon: "https://www.youtube.com/favicon.ico",
-        }
-      }
-    } catch (scrapeError) {
-      console.log("[fetchYouTubeMetadata] Direct scrape failed:", scrapeError)
+      console.log("[fetchYouTubeMetadata] oEmbed failed:", oEmbedError)
     }
 
     // Final fallback with video ID
