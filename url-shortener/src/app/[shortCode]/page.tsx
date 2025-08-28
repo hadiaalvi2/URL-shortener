@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
-import { getUrl, updateUrlData, isWeakMetadata, refreshMetadata, isCacheStale } from "@/lib/url-store"
+import { getUrl, updateUrlData, isWeakMetadata } from "@/lib/url-store"
 import { fetchPageMetadata } from "@/lib/utils"
 import type { Metadata } from "next"
 import Image from "next/image"
@@ -14,7 +14,7 @@ const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const { shortCode } = await params
-    let data = await getUrl(shortCode) 
+    let data = await getUrl(shortCode)
     const metadataBase = new URL(baseUrl)
 
     if (!data) {
@@ -25,18 +25,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       }
     }
 
-    // Force refresh if metadata is still weak after getUrl call
-    if (isWeakMetadata(data)) {
-      console.log(`Forcing metadata refresh for ${shortCode}`)
-      try {
-        const refreshed = await refreshMetadata(shortCode)
-        if (refreshed) data = refreshed
-      } catch (error) {
-        console.error('Error force refreshing metadata:', error)
-      }
-    }
-
     const original = data.originalUrl ? new URL(data.originalUrl) : null
+
+    // If stored metadata is weak or missing description, try fetching a fresh one
+    try {
+      if (!data.description || isWeakMetadata(data)) {
+        const fresh = await fetchPageMetadata(data.originalUrl)
+        const improved = await updateUrlData(shortCode, fresh)
+        if (improved) {
+          data = improved
+        }
+      }
+    } catch {}
     const domainFallback = original ? original.hostname : undefined
     const title = data.title || domainFallback
     // Never include URL in description - only use actual description or title
@@ -86,7 +86,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function RedirectPage(props: Props) {
   try {
     const { shortCode } = await props.params
-    let data = await getUrl(shortCode) // This now handles cache refresh automatically
+    const data = await getUrl(shortCode)
 
     const headersList = await headers()
     const userAgent = headersList.get("user-agent") || ""
@@ -119,27 +119,16 @@ export default async function RedirectPage(props: Props) {
       let description = data.description || undefined
       let imageUrl = data.image
 
-      // Always try to get fresh metadata for social media bots to ensure latest content
+      // Opportunistically refresh weak/missing metadata for previews
       try {
-        console.log(`Social media bot detected, fetching fresh metadata for ${shortCode}`)
-        const fresh = await fetchPageMetadata(data.originalUrl)
-        if (fresh.title && fresh.title !== title) {
-          title = fresh.title
-        }
-        if (fresh.description && fresh.description !== description) {
-          description = fresh.description
-        }
-        if (fresh.image && fresh.image !== imageUrl) {
-          imageUrl = fresh.image
-        }
-        
-        // Update cache with fresh data
-        if (fresh.title || fresh.description || fresh.image) {
+        if (!description || isWeakMetadata(data)) {
+          const fresh = await fetchPageMetadata(data.originalUrl)
+          title = fresh.title || title
+          description = fresh.description || description
+          imageUrl = fresh.image || imageUrl
           await updateUrlData(shortCode, fresh)
         }
-      } catch (error) {
-        console.error('Error fetching fresh metadata for social bot:', error)
-      }
+      } catch {}
 
       return (
         <html>
