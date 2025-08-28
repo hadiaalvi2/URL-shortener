@@ -68,7 +68,7 @@ export async function fetchPageMetadata(url: string, retryCount = 3) {
       const response = await safeFetch(normalizedUrl, {
         redirect: "follow",
         method: "GET",
-      })
+      }, 15000) // Pass timeout as separate parameter
 
       const effectiveUrl = response.url || normalizedUrl
       console.log(`[fetchPageMetadata] Response status: ${response.status}, effective URL: ${effectiveUrl}`)
@@ -172,406 +172,226 @@ function parseHtmlMetadata(html: string, effectiveUrl: string) {
   let image = ""
   let favicon = ""
 
-  console.log(`[parseHtmlMetadata] Parsing HTML for: ${effectiveUrl}`)
-
+  console.log(`[parseHtmlMetadata] Parsing HTML for metadata`)
+  
   try {
-    const $ = cheerio.load(html, {
-  xml: {
-    decodeEntities: false 
-  }
-})
-
-    // Extract title with comprehensive fallbacks
-    const titleCandidates = [
-      $("meta[property='og:title']").attr("content"),
-      $("meta[name='twitter:title']").attr("content"),
-      $("meta[property='twitter:title']").attr("content"),
-      $("meta[name='title']").attr("content"),
-      $("meta[itemprop='name']").attr("content"),
-      $("title").text(),
-      $("h1").first().text(),
-      $("h2").first().text()
-    ]
-
-    for (const candidate of titleCandidates) {
-      const cleaned = candidate?.trim()
-      if (cleaned && cleaned.length > 0 && cleaned.length < 200) {
-        title = cleaned
-        break
-      }
-    }
-
-    // Extract description with comprehensive fallbacks
-    const descriptionCandidates = [
-      $("meta[property='og:description']").attr("content"),
-      $("meta[name='description']").attr("content"),
-      $("meta[name='twitter:description']").attr("content"),
-      $("meta[property='twitter:description']").attr("content"),
-      $("meta[itemprop='description']").attr("content"),
-      $("meta[name='summary']").attr("content"),
-      $("p").first().text(),
-    ]
-
-    for (const candidate of descriptionCandidates) {
-      const cleaned = candidate?.trim()
-      if (cleaned && cleaned.length > 10 && cleaned.length < 500) {
-        description = cleaned
-        break
-      }
-    }
-
-    // Extract image with comprehensive fallbacks
-    const imageCandidates = [
-      $("meta[property='og:image']").attr("content"),
-      $("meta[property='og:image:url']").attr("content"),
-      $("meta[name='twitter:image']").attr("content"),
-      $("meta[property='twitter:image']").attr("content"),
-      $("meta[name='twitter:image:src']").attr("content"),
-      $("meta[itemprop='image']").attr("content"),
-      $("link[rel='image_src']").attr("href"),
-      $("article img").first().attr("src"),
-      $("img").first().attr("src")
-    ]
-
-    for (const candidate of imageCandidates) {
-      const cleaned = candidate?.trim()
-      if (cleaned && cleaned.length > 0) {
-        image = cleaned
-        break
-      }
-    }
-
-    // Extract favicon with comprehensive fallbacks
-    const faviconCandidates = [
-      $("link[rel='icon']").attr("href"),
-      $("link[rel='shortcut icon']").attr("href"),
-      $("link[rel='apple-touch-icon']").attr("href"),
-      $("link[rel='apple-touch-icon-precomposed']").attr("href"),
-      $("link[rel='mask-icon']").attr("href"),
-      $("meta[name='msapplication-TileImage']").attr("content")
-    ]
-
-    for (const candidate of faviconCandidates) {
-      const cleaned = candidate?.trim()
-      if (cleaned && cleaned.length > 0) {
-        favicon = cleaned
-        break
-      }
-    }
-
+    const $ = cheerio.load(html)
+    
+    // Extract title
+    title = $('title').first().text().trim() || 
+            $('meta[property="og:title"]').attr('content') || 
+            $('meta[name="twitter:title"]').attr('content') || ""
+    
+    // Extract description
+    description = $('meta[property="og:description"]').attr('content') || 
+                  $('meta[name="description"]').attr('content') || 
+                  $('meta[name="twitter:description"]').attr('content') || ""
+    
+    // Extract image
+    image = $('meta[property="og:image"]').attr('content') || 
+            $('meta[name="twitter:image"]').attr('content') || 
+            $('link[rel="image_src"]').attr('href') || ""
+    
+    // Extract favicon
+    favicon = $('link[rel="icon"]').attr('href') || 
+              $('link[rel="shortcut icon"]').attr('href') || 
+              $('link[rel="apple-touch-icon"]').attr('href') || 
+              $('meta[itemprop="image"]').attr('content') || ""
+    
     console.log(`[parseHtmlMetadata] Raw extracted:`, {
-      title: title ? `${title.substring(0, 50)}...` : "none",
-      description: description ? `${description.substring(0, 50)}...` : "none",
-      image: image ? "found" : "none",
-      favicon: favicon ? "found" : "none"
+      title: title ? `${title.substring(0, 50)}...` : 'none',
+      description: description ? `${description.substring(0, 50)}...` : 'none',
+      image: image ? `${image.substring(0, 50)}...` : 'none',
+      favicon: favicon ? `${favicon.substring(0, 50)}...` : 'none',
     })
-
-  } catch (e) {
-    console.error("[parseHtmlMetadata] Error parsing HTML:", e)
-    return {
-      title: extractDomainTitle(effectiveUrl),
-      description: "",
-      image: "",
-      favicon: getDefaultFavicon(effectiveUrl),
-    }
-  }
-
-  // Resolve relative URLs
-  try {
+    
+    // Resolve relative URLs
     const baseUrl = new URL(effectiveUrl)
-
-    if (image && !image.startsWith("http")) {
-      if (image.startsWith("//")) {
-        image = baseUrl.protocol + image
-      } else if (image.startsWith("/")) {
-        image = baseUrl.origin + image
-      } else {
+    
+    if (image && !image.startsWith('http')) {
+      try {
         image = new URL(image, baseUrl.origin).toString()
+      } catch {
+        image = ""
       }
     }
-
-    if (favicon && !favicon.startsWith("http")) {
-      if (favicon.startsWith("//")) {
-        favicon = baseUrl.protocol + favicon
-      } else if (favicon.startsWith("/")) {
-        favicon = baseUrl.origin + favicon
-      } else {
+    
+    if (favicon && !favicon.startsWith('http')) {
+      try {
         favicon = new URL(favicon, baseUrl.origin).toString()
+      } catch {
+        favicon = ""
       }
     }
-  } catch (e) {
-    console.error("[parseHtmlMetadata] Error resolving URLs:", e)
-  }
-
-  // Apply fallbacks if needed
-  if (!title || title.length === 0) {
+    
+    // Clean up the extracted values
+    title = title.replace(/\s+/g, ' ').trim()
+    description = description.replace(/\s+/g, ' ').trim()
+    
+    // Fallback to domain title if title is empty
+    if (!title) {
+      title = extractDomainTitle(effectiveUrl)
+    }
+    
+    // Fallback to default favicon if none found
+    if (!favicon) {
+      favicon = getDefaultFavicon(effectiveUrl)
+    }
+    
+    console.log(`[parseHtmlMetadata] Final parsed:`, {
+      title: title ? `${title.substring(0, 50)}...` : 'none',
+      description: description ? `${description.substring(0, 50)}...` : 'none',
+      image: image ? `${image.substring(0, 50)}...` : 'none',
+      favicon: favicon ? `${favicon.substring(0, 50)}...` : 'none',
+    })
+    
+  } catch (error) {
+    console.error(`[parseHtmlMetadata] Error parsing HTML:`, error)
     title = extractDomainTitle(effectiveUrl)
-  }
-
-  if (!favicon || favicon.length === 0) {
     favicon = getDefaultFavicon(effectiveUrl)
   }
-
-  // Cleanup and validation
-  title = cleanupText(title)
-  description = cleanupText(description)
-
-  // Validate URLs
-  if (image && !isValidUrl(image)) {
-    console.warn(`[parseHtmlMetadata] Invalid image URL: ${image}`)
-    image = ""
-  }
-
-  if (favicon && !isValidUrl(favicon)) {
-    console.warn(`[parseHtmlMetadata] Invalid favicon URL: ${favicon}`)
-    favicon = getDefaultFavicon(effectiveUrl)
-  }
-
-  const finalResult = {
-    title,
-    description,
-    image,
-    favicon,
-  }
-
-  console.log(`[parseHtmlMetadata] Final metadata:`, {
-    title: finalResult.title,
-    description: finalResult.description ? `${finalResult.description.substring(0, 50)}...` : "none",
-    hasImage: !!finalResult.image,
-    hasFavicon: !!finalResult.favicon,
-  })
-
-  return finalResult
+  
+  return { title, description, image, favicon }
 }
 
-// ---- Enhanced YouTube Metadata Extraction ----
-async function fetchYouTubeMetadata(url: string): Promise<{
-  title: string
-  description: string
-  image: string
-  favicon: string
-}> {
-  try {
-    console.log(`[fetchYouTubeMetadata] Extracting metadata for YouTube video: ${url}`)
-
-    const videoId = getYouTubeVideoId(url)
-    if (!videoId) {
-      console.error("Could not extract YouTube video ID")
-      return { 
-        title: "YouTube Video", 
-        description: "Watch this video on YouTube", 
-        image: "", 
-        favicon: "https://www.youtube.com/favicon.ico" 
-      }
-    }
-
-    // Method 1: Try YouTube Data API if available (most reliable)
-    const apiKey = process.env.YOUTUBE_API_KEY;
-    if (apiKey) {
-      try {
-        const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${apiKey}`
-        const response = await safeFetch(apiUrl)
-        
-        if (response.ok) {
-          const data = await response.json()
-          if (data.items && data.items.length > 0) {
-            const snippet = data.items[0].snippet
-            const title = snippet.title || "YouTube Video"
-            const description = snippet.description || `Watch "${title}" on YouTube`
-            const thumbnailUrl = snippet.thumbnails?.maxres?.url || 
-                               snippet.thumbnails?.high?.url || 
-                               snippet.thumbnails?.medium?.url ||
-                               `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-
-            console.log(`[fetchYouTubeMetadata] API success:`, { title })
-
-            return {
-              title,
-              description: description.substring(0, 300), // Limit description length
-              image: thumbnailUrl,
-              favicon: "https://www.youtube.com/favicon.ico",
-            }
-          }
-        }
-      } catch (apiError) {
-        console.log("[fetchYouTubeMetadata] API failed, trying direct scrape:", apiError)
-      }
-    }
-
-    // Method 2: Direct scrape with enhanced parsing
-    try {
-      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
-      const response = await safeFetch(youtubeUrl, {
-        headers: {
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-      })
-
-      if (response.ok) {
-        const html = await response.text()
-        const $ = cheerio.load(html)
-        
-        // Extract title
-        const title =
-          $('meta[property="og:title"]').attr("content")?.trim() ||
-          $("title").text().replace(" - YouTube", "").trim() ||
-          "YouTube Video"
-
-        // Extract description - try multiple approaches
-        let description = ""
-        
-        // Try JSON-LD data (most reliable for description)
-        try {
-          const jsonLdScript = $('script[type="application/ld+json"]').html()
-          if (jsonLdScript) {
-            const jsonLd = JSON.parse(jsonLdScript)
-            if (jsonLd.description) {
-              description = jsonLd.description
-            }
-          }
-        } catch (e) {
-          console.log("Failed to parse JSON-LD:", e)
-        }
-        
-        // Fallback to meta tags
-        if (!description) {
-          description =
-            $('meta[property="og:description"]').attr("content")?.trim() ||
-            $('meta[name="description"]').attr("content")?.trim() ||
-            ""
-        }
-        
-        // Clean up generic YouTube descriptions
-        if (!description || 
-            description.includes("Enjoy the videos") || 
-            description.includes("Upload original content") ||
-            description.includes("Music video by")) {
-          description = `Watch "${title}" on YouTube`
-        }
-
-        // Extract image
-        const imageUrl =
-          $('meta[property="og:image"]').attr("content")?.trim() ||
-          $('link[rel="image_src"]').attr("href")?.trim() ||
-          `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-
-        console.log(`[fetchYouTubeMetadata] Direct scrape success:`, { 
-          title,
-          description: description ? `${description.substring(0, 50)}...` : "none"
-        })
-
-        return {
-          title,
-          description: description.substring(0, 300),
-          image: imageUrl,
-          favicon: "https://www.youtube.com/favicon.ico",
-        }
-      }
-    } catch (scrapeError) {
-      console.log("[fetchYouTubeMetadata] Direct scrape failed:", scrapeError)
-    }
-
-    // Method 3: Try oEmbed as last resort
-    try {
-      const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
-      const response = await safeFetch(oEmbedUrl)
-
-      if (response.ok) {
-        const data = await response.json()
-        const title = data.title || "YouTube Video"
-        const thumbnailUrl = data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-        const authorName = data.author_name || "YouTube Creator"
-
-        const description = `Video by ${authorName} on YouTube`
-
-        console.log(`[fetchYouTubeMetadata] oEmbed success:`, { title, authorName })
-
-        return {
-          title,
-          description,
-          image: thumbnailUrl,
-          favicon: "https://www.youtube.com/favicon.ico",
-        }
-      }
-    } catch (oEmbedError) {
-      console.log("[fetchYouTubeMetadata] oEmbed failed:", oEmbedError)
-    }
-
-    // Final fallback with video ID
-    console.log("[fetchYouTubeMetadata] Using fallback metadata")
+// ---- YouTube Specific Metadata ----
+async function fetchYouTubeMetadata(url: string) {
+  console.log(`[fetchYouTubeMetadata] Starting YouTube metadata extraction for: ${url}`)
+  
+  const videoId = extractYouTubeVideoId(url)
+  if (!videoId) {
+    console.error(`[fetchYouTubeMetadata] Could not extract video ID from: ${url}`)
     return {
       title: "YouTube Video",
-      description: "Watch this video on YouTube",
-      image: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-      favicon: "https://www.youtube.com/favicon.ico",
+      description: "",
+      image: "",
+      favicon: "https://www.youtube.com/favicon.ico"
     }
-  } catch (error) {
-    console.error("[fetchYouTubeMetadata] Error extracting YouTube metadata:", error)
-    return { 
-      title: "YouTube Video", 
-      description: "Watch this video on YouTube", 
-      image: "", 
-      favicon: "https://www.youtube.com/favicon.ico" 
+  }
+
+  console.log(`[fetchYouTubeMetadata] Extracted video ID: ${videoId}`)
+  
+  // Try to fetch from oEmbed API first
+  try {
+    const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+    console.log(`[fetchYouTubeMetadata] Trying oEmbed API: ${oEmbedUrl}`)
+    
+    const response = await safeFetch(oEmbedUrl, {}, 10000) // Pass timeout as separate parameter
+    
+    if (response.ok) {
+      const data = await response.json()
+      console.log(`[fetchYouTubeMetadata] oEmbed response:`, {
+        title: data.title,
+        hasThumbnail: !!data.thumbnail_url,
+        author: data.author_name
+      })
+      
+      return {
+        title: data.title || "YouTube Video",
+        description: data.author_name ? `By ${data.author_name}` : "",
+        image: data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+        favicon: "https://www.youtube.com/favicon.ico"
+      }
     }
+  } catch (oEmbedError) {
+    console.error(`[fetchYouTubeMetadata] oEmbed API failed:`, oEmbedError)
+  }
+  
+  // Fallback to scraping the page
+  try {
+    console.log(`[fetchYouTubeMetadata] Falling back to page scraping`)
+    const response = await safeFetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+      }
+    }, 15000) // Pass timeout as separate parameter
+    
+    if (response.ok) {
+      const html = await response.text()
+      const $ = cheerio.load(html)
+      
+      // Extract title
+      let title = $('meta[property="og:title"]').attr('content') || 
+                  $('title').text().replace(' - YouTube', '') || 
+                  "YouTube Video"
+      
+      // Extract description
+      let description = $('meta[property="og:description"]').attr('content') || 
+                        $('meta[name="description"]').attr('content') || ""
+      
+      // Extract channel name from various possible locations
+      const channelName = $('link[itemprop="name"]').attr('content') || 
+                          $('span[itemprop="author"] link[itemprop="name"]').attr('content') ||
+                          $('.ytd-channel-name a').text().trim() ||
+                          ""
+      
+      if (channelName && !description.includes(channelName)) {
+        description = channelName + (description ? ` - ${description}` : "")
+      }
+      
+      // Clean up description (remove YouTube boilerplate)
+      if (description.includes('Enjoy the videos and music')) {
+        description = description.split('Enjoy the videos and music')[0].trim()
+      }
+      
+      return {
+        title: title.replace(/\s+/g, ' ').trim(),
+        description: description.replace(/\s+/g, ' ').trim(),
+        image: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+        favicon: "https://www.youtube.com/favicon.ico"
+      }
+    }
+  } catch (scrapeError) {
+    console.error(`[fetchYouTubeMetadata] Page scraping also failed:`, scrapeError)
+  }
+  
+  // Final fallback - minimal metadata
+  console.log(`[fetchYouTubeMetadata] Using minimal fallback metadata`)
+  return {
+    title: "YouTube Video",
+    description: "",
+    image: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+    favicon: "https://www.youtube.com/favicon.ico"
   }
 }
 
-// ---- Helper Functions ----
-function getYouTubeVideoId(url: string): string | null {
+function extractYouTubeVideoId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
     /youtube\.com\/watch\?v=([^&]+)/,
     /youtube\.com\/embed\/([^\/]+)/,
-    /youtu\.be\/([^\/]+)/,
-    /youtube\.com\/shorts\/([^\/\?]+)/,
-  ]
-
+    /youtu\.be\/([^\/]+)/
+  ];
+  
   for (const pattern of patterns) {
-    const match = url.match(pattern)
+    const match = url.match(pattern);
     if (match && match[1]) {
-      return match[1]
+      return match[1];
     }
   }
-  return null
+  
+  return null;
 }
 
+// ---- Helper Functions ----
 function extractDomainTitle(url: string): string {
   try {
-    const domain = new URL(url).hostname
+    const domain = new URL(url).hostname;
     return domain.replace('www.', '').replace(/\.[^.]+$/, '')
       .split('.').map(word => 
         word.charAt(0).toUpperCase() + word.slice(1)
-      ).join(' ')
+      ).join(' ');
   } catch {
-    return "Website"
+    return "Website";
   }
 }
 
 function getDefaultFavicon(url: string): string {
   try {
-    const urlObj = new URL(url)
-    return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`
+    const urlObj = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`;
   } catch {
-    return "/favicon.ico"
-  }
-}
-
-function cleanupText(text: string): string {
-  if (!text) return ""
-  
-  return text
-    .replace(/\s+/g, " ")
-    .replace(/[\r\n\t]/g, " ")
-    .replace(/[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, "") // Remove unusual characters
-    .trim()
-    .substring(0, 300) // Limit length
-}
-
-function isValidUrl(string: string): boolean {
-  try {
-    const url = new URL(string)
-    return url.protocol === "http:" || url.protocol === "https:"
-  } catch {
-    return false
+    return "/favicon.ico";
   }
 }

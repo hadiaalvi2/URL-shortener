@@ -64,16 +64,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     const original = data.originalUrl ? new URL(data.originalUrl) : null
 
-    // Force refresh metadata for YouTube URLs to get better description
+    // Force refresh metadata for ALL URLs with weak metadata
     try {
-      if (data.originalUrl && (data.originalUrl.includes('youtube.com') || data.originalUrl.includes('youtu.be'))) {
-        console.log('[generateMetadata] Force refreshing YouTube metadata')
-        const fresh = await fetchPageMetadata(data.originalUrl)
-        const improved = await updateUrlData(shortCode, fresh)
-        if (improved) {
-          data = improved
-        }
-      } else if (isWeakMetadata(data)) {
+      if (isWeakMetadata(data)) {
+        console.log('[generateMetadata] Force refreshing weak metadata')
         const fresh = await fetchPageMetadata(data.originalUrl)
         const improved = await updateUrlData(shortCode, fresh)
         if (improved) {
@@ -166,39 +160,41 @@ export default async function RedirectPage(props: Props) {
       let imageUrl = data.image
       let favicon = data.favicon
 
-      // FORCE refresh metadata for social media bots, especially for YouTube
+      // FORCE refresh metadata for social media bots for ALL URLs with weak metadata
       try {
-        console.log(`[SocialMediaBot] Refreshing metadata for: ${data.originalUrl}`);
-        const fresh = await fetchPageMetadata(data.originalUrl)
-        
-        // Only update if we got better data
-        if (fresh.title && (!title || isWeakMetadata({ title, description }))) {
-          title = fresh.title
+        if (isWeakMetadata(data)) {
+          console.log(`[SocialMediaBot] Refreshing metadata for: ${data.originalUrl}`);
+          const fresh = await fetchPageMetadata(data.originalUrl)
+          
+          // Only update if we got better data
+          if (fresh.title && (!title || isWeakMetadata({ title, description }))) {
+            title = fresh.title
+          }
+          if (fresh.description && (!description || description.includes('Enjoy the videos'))) {
+            description = fresh.description
+          }
+          if (fresh.image && (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
+            imageUrl = fresh.image
+          }
+          if (fresh.favicon && (!favicon || favicon.includes('google.com/s2/favicons'))) {
+            favicon = fresh.favicon
+          }
+          
+          // Update the stored data with fresh metadata
+          await updateUrlData(shortCode, { 
+            title: title || data.title, 
+            description: description || data.description, 
+            image: imageUrl || data.image, 
+            favicon: favicon || data.favicon 
+          })
+          
+          console.log(`[SocialMediaBot] Updated metadata:`, { 
+            title, 
+            description: description ? `${description.substring(0, 50)}...` : 'none',
+            hasImage: !!imageUrl,
+            hasFavicon: !!favicon
+          });
         }
-        if (fresh.description && (!description || description.includes('Enjoy the videos'))) {
-          description = fresh.description
-        }
-        if (fresh.image && (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
-          imageUrl = fresh.image
-        }
-        if (fresh.favicon && (!favicon || favicon.includes('google.com/s2/favicons'))) {
-          favicon = fresh.favicon
-        }
-        
-        // Update the stored data with fresh metadata
-        await updateUrlData(shortCode, { 
-          title: title || data.title, 
-          description: description || data.description, 
-          image: imageUrl || data.image, 
-          favicon: favicon || data.favicon 
-        })
-        
-        console.log(`[SocialMediaBot] Updated metadata:`, { 
-          title, 
-          description: description ? `${description.substring(0, 50)}...` : 'none',
-          hasImage: !!imageUrl,
-          hasFavicon: !!favicon
-        });
       } catch (error) {
         console.error('[SocialMediaBot] Error refreshing metadata:', error);
       }

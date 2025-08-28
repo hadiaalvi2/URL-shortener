@@ -26,7 +26,7 @@ export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   
   const hasNoImage = !data.image || data.image.includes('google.com/s2/favicons');
   
-  return hasGenericTitle && hasGenericDescription && hasNoImage;
+  return hasGenericTitle || hasGenericDescription || hasNoImage;
 }
 
 export async function updateUrlData(shortCode: string, partial: Partial<UrlData>): Promise<UrlData | null> {
@@ -129,35 +129,34 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   // Prepare metadata - use provided metadata or fetch fresh
   let enhancedMetadata = metadata || {};
   
-  if (Object.keys(enhancedMetadata).length === 0 || isWeakMetadata(enhancedMetadata)) {
-    try {
-      console.log(`[createShortCode] Fetching fresh metadata for: ${normalizedUrl}`);
-      const fetchedMetadata = await fetchPageMetadata(normalizedUrl);
-      
-      // Only use fetched metadata if it's better than what we have
-      enhancedMetadata = {
-        title: fetchedMetadata.title && fetchedMetadata.title.length > 3 ? fetchedMetadata.title : enhancedMetadata.title,
-        description: fetchedMetadata.description && fetchedMetadata.description.length > 10 ? fetchedMetadata.description : enhancedMetadata.description,
-        image: fetchedMetadata.image && !fetchedMetadata.image.includes('google.com/s2/favicons') ? fetchedMetadata.image : enhancedMetadata.image,
-        favicon: fetchedMetadata.favicon ? fetchedMetadata.favicon : enhancedMetadata.favicon,
-      };
-      
-      console.log(`[createShortCode] Enhanced metadata:`, {
-        title: enhancedMetadata.title ? `${enhancedMetadata.title.substring(0, 50)}...` : 'none',
-        description: enhancedMetadata.description ? `${enhancedMetadata.description.substring(0, 50)}...` : 'none',
-        hasImage: !!enhancedMetadata.image,
-        hasFavicon: !!enhancedMetadata.favicon,
-      });
-    } catch (error) {
-      console.error(`[createShortCode] Error fetching enhanced metadata:`, error);
-      // Fallback to domain-based metadata
-      enhancedMetadata = {
-        title: enhancedMetadata.title || extractDomainTitle(normalizedUrl),
-        description: enhancedMetadata.description || "",
-        image: enhancedMetadata.image || "",
-        favicon: enhancedMetadata.favicon || getDefaultFavicon(normalizedUrl)
-      };
-    }
+  // Always try to fetch fresh metadata for better results
+  try {
+    console.log(`[createShortCode] Fetching fresh metadata for: ${normalizedUrl}`);
+    const fetchedMetadata = await fetchPageMetadata(normalizedUrl);
+    
+    // Only use fetched metadata if it's better than what we have
+    enhancedMetadata = {
+      title: fetchedMetadata.title && fetchedMetadata.title.length > 3 ? fetchedMetadata.title : enhancedMetadata.title,
+      description: fetchedMetadata.description && fetchedMetadata.description.length > 10 ? fetchedMetadata.description : enhancedMetadata.description,
+      image: fetchedMetadata.image && !fetchedMetadata.image.includes('google.com/s2/favicons') ? fetchedMetadata.image : enhancedMetadata.image,
+      favicon: fetchedMetadata.favicon ? fetchedMetadata.favicon : enhancedMetadata.favicon,
+    };
+    
+    console.log(`[createShortCode] Enhanced metadata:`, {
+      title: enhancedMetadata.title ? `${enhancedMetadata.title.substring(0, 50)}...` : 'none',
+      description: enhancedMetadata.description ? `${enhancedMetadata.description.substring(0, 50)}...` : 'none',
+      hasImage: !!enhancedMetadata.image,
+      hasFavicon: !!enhancedMetadata.favicon,
+    });
+  } catch (error) {
+    console.error(`[createShortCode] Error fetching enhanced metadata:`, error);
+    // Fallback to domain-based metadata
+    enhancedMetadata = {
+      title: enhancedMetadata.title || extractDomainTitle(normalizedUrl),
+      description: enhancedMetadata.description || "",
+      image: enhancedMetadata.image || "",
+      favicon: enhancedMetadata.favicon || getDefaultFavicon(normalizedUrl)
+    };
   }
 
   // Ensure we have at least basic metadata
