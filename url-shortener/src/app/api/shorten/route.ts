@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createShortCode, getUrl, getAllUrls } from "@/lib/url-store"
+import { createShortCode, getUrl } from "@/lib/url-store"
 import { kv } from "@vercel/kv";
-import { fetchPageMetadata } from "@/lib/utils"; // Import fetchPageMetadata
+import { fetchPageMetadata } from "@/lib/utils"; 
 import { isWeakMetadata, updateUrlData } from "@/lib/url-store";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
 
-// Removed the extractMetadata function, as it's now handled by fetchPageMetadata in utils.ts
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     }
 
     
-    const metadata = await fetchPageMetadata(normalizedUrl); // Use fetchPageMetadata
+    const metadata = await fetchPageMetadata(normalizedUrl); 
     
     // Create short code
     const shortCode = await createShortCode(normalizedUrl, metadata);

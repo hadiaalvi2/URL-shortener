@@ -114,89 +114,125 @@ export default async function RedirectPage(props: Props) {
       )
     }
 
-    if (isSocialMediaBot) {
-      const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
-      let title = data.title
-      let description = data.description || undefined
-      let imageUrl = data.image
+if (isSocialMediaBot) {
+  const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
+  let title = data.title
+  let description = data.description || undefined
+  let imageUrl = data.image
 
-      // Always refresh metadata for social media bots to ensure fresh data
-      try {
-        const fresh = await fetchPageMetadata(data.originalUrl)
-        title = fresh.title || title
-        description = fresh.description || description
-        imageUrl = fresh.image || imageUrl
-        
-        // Update the stored data with fresh metadata
-        await updateUrlData(shortCode, { title, description, image: imageUrl })
-      } catch {}
+  // FORCE refresh metadata for social media bots, especially for YouTube
+  try {
+    console.log(`[SocialMediaBot] Refreshing metadata for: ${data.originalUrl}`);
+    const fresh = await fetchPageMetadata(data.originalUrl)
+    title = fresh.title || title
+    description = fresh.description || description
+    imageUrl = fresh.image || imageUrl
+    
+    // Update the stored data with fresh metadata
+    await updateUrlData(shortCode, { title, description, image: imageUrl })
+    
+    console.log(`[SocialMediaBot] Fresh metadata:`, { 
+      title, 
+      description: description ? `${description.substring(0, 50)}...` : 'none' 
+    });
+  } catch (error) {
+    console.error('[SocialMediaBot] Error refreshing metadata:', error);
+  }
 
-      return (
-        <html>
-          <head>
-            <title>{title || "Shortened Link"}</title>
-            {data.favicon && <link rel="icon" href={data.favicon} />}
-            {title && <meta property="og:title" content={title} />}
-            {description && <meta property="og:description" content={description} />}
-            {imageUrl && <meta property="og:image" content={imageUrl} />}
-            {/* Prefer original URL so chat apps show original domain */}
-            <meta property="og:url" content={data.originalUrl} />
-            <meta property="og:type" content="website" />
-            <meta property="og:site_name" content="URL Shortener" />
-            <meta name="twitter:card" content={imageUrl ? "summary_large_image" : "summary"} />
-            {title && <meta name="twitter:title" content={title} />}
-            {description && <meta name="twitter:description" content={description} />}
-            {imageUrl && <meta name="twitter:image" content={imageUrl} />}
-          </head>
-          <body>
-            <main className="min-h-screen bg-gray-50 p-6">
-              <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
-                {imageUrl && (
-                  <div className="w-full h-48 bg-gray-200 overflow-hidden">
-                    <Image 
-                      src={imageUrl} 
-                      alt={title || 'Preview Image'}
-                      width={800}
-                      height={400}
-                      className="w-full h-full object-cover"
-                      unoptimized={!imageUrl.startsWith(baseUrl)}
-                    />
-                  </div>
-                )}
-                
-                <div className="p-6 border-b border-gray-200">
-                  <div className="flex items-center mb-4">
-                    <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3">
-                      <span className="text-gray-500 text-xs">🔗</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h1 className="text-xl font-bold text-gray-900 truncate">
-                        {title || 'Shortened Link'}
-                      </h1>
-                      <p className="text-sm text-gray-500 truncate">{domain}</p>
-                    </div>
-                  </div>
-                  {description && <p className="text-gray-700">{description}</p>}
+  // For YouTube, ensure we have a proper description
+  if (data.originalUrl && (data.originalUrl.includes('youtube.com') || data.originalUrl.includes('youtu.be'))) {
+    if (!description || description.includes('Enjoy the videos and music')) {
+      description = title || 'Watch this video on YouTube';
+    }
+    
+    // Ensure we have a high-quality thumbnail
+    const videoId = getYouTubeVideoId(data.originalUrl);
+    if (videoId && (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
+      imageUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+    }
+  }
+
+  return (
+    <html>
+      <head>
+        <title>{title || "Shortened Link"}</title>
+        {data.favicon && <link rel="icon" href={data.favicon} />}
+        {title && <meta property="og:title" content={title} />}
+        {description && <meta property="og:description" content={description} />}
+        {imageUrl && <meta property="og:image" content={imageUrl} />}
+        {/* Prefer original URL so chat apps show original domain */}
+        <meta property="og:url" content={data.originalUrl} />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="URL Shortener" />
+        <meta name="twitter:card" content={imageUrl ? "summary_large_image" : "summary"} />
+        {title && <meta name="twitter:title" content={title} />}
+        {description && <meta name="twitter:description" content={description} />}
+        {imageUrl && <meta name="twitter:image" content={imageUrl} />}
+      </head>
+      <body>
+        <main className="min-h-screen bg-gray-50 p-6">
+          <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
+            {imageUrl && (
+              <div className="w-full h-48 bg-gray-200 overflow-hidden">
+                <Image 
+                  src={imageUrl} 
+                  alt={title || 'Preview Image'}
+                  width={800}
+                  height={400}
+                  className="w-full h-full object-cover"
+                  unoptimized={!imageUrl.startsWith(baseUrl)}
+                />
+              </div>
+            )}
+            
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center mb-4">
+                <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3">
+                  <span className="text-gray-500 text-xs">🔗</span>
                 </div>
-
-                <div className="p-6">
-                  <a
-                    href={data.originalUrl}
-                    className="w-full bg-blue-600 text-white py-3 px-4 rounded-md text-center block hover:bg-blue-700 transition-colors"
-                  >
-                    Continue to Website
-                  </a>
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-xl font-bold text-gray-900 truncate">
+                    {title || 'Shortened Link'}
+                  </h1>
+                  <p className="text-sm text-gray-500 truncate">{domain}</p>
                 </div>
               </div>
-            </main>
-          </body>
-        </html>
-      )
-    }
+              {description && <p className="text-gray-700">{description}</p>}
+            </div>
 
-    redirect(data.originalUrl)
-    
-    return null
+            <div className="p-6">
+              <a
+                href={data.originalUrl}
+                className="w-full bg-blue-600 text-white py-3 px-4 rounded-md text-center block hover:bg-blue-700 transition-colors"
+              >
+                Continue to Website
+              </a>
+            </div>
+          </div>
+        </main>
+      </body>
+    </html>
+  )
+}
+
+
+function getYouTubeVideoId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
+    /youtube\.com\/watch\?v=([^&]+)/,
+    /youtube\.com\/embed\/([^\/]+)/,
+    /youtu\.be\/([^\/]+)/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  
+  return null;
+}
 
   } catch (error) {
     if (typeof error === 'object' && error !== null && 'digest' in error) {
