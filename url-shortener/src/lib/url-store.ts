@@ -19,7 +19,8 @@ export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   
   const hasGenericDescription = !data.description || 
                                data.description.includes('Enjoy the videos and music') ||
-                               data.description.includes('Upload original content');
+                               data.description.includes('Upload original content') ||
+                               data.description.includes('Music video by');
   
   return hasGenericTitle || hasGenericDescription;
 }
