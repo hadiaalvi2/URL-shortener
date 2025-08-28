@@ -68,7 +68,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         siteName: "URL Shortener",
       },
       twitter: {
-        card: 'summary_large_image',
+        card: data.image ? 'summary_large_image' : 'summary',
         title,
         description,
         images: imageUrl ? [imageUrl] : [],
@@ -98,7 +98,9 @@ export default async function RedirectPage(props: Props) {
       ua.includes("whatsapp") ||
       ua.includes("telegrambot") ||
       ua.includes("discordbot") ||
-      ua.includes("slackbot")
+      ua.includes("slackbot") ||
+      ua.includes("pinterest") ||
+      ua.includes("redditbot")
 
     if (!data) {
       return (
@@ -142,7 +144,7 @@ export default async function RedirectPage(props: Props) {
             <meta property="og:url" content={data.originalUrl} />
             <meta property="og:type" content="website" />
             <meta property="og:site_name" content="URL Shortener" />
-            <meta name="twitter:card" content="summary_large_image" />
+            <meta name="twitter:card" content={imageUrl ? "summary_large_image" : "summary"} />
             {title && <meta name="twitter:title" content={title} />}
             {description && <meta name="twitter:description" content={description} />}
             {imageUrl && <meta name="twitter:image" content={imageUrl} />}

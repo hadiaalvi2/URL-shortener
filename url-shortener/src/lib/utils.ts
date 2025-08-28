@@ -10,7 +10,7 @@ export async function fetchPageMetadata(url: string) {
   console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`);
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10 seconds
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout to 15 seconds for YouTube
 
     console.log(`[fetchPageMetadata] Fetching response for: ${url}`); // Debugging line
     
@@ -150,12 +150,6 @@ export async function fetchPageMetadata(url: string) {
         }
       });
 
-      // Try all common rel attributes for favicon
-      favicon =
-        $("link[rel='icon']").attr("href") ||
-        $("link[rel='shortcut icon']").attr("href") ||
-        $("link[rel='apple-touch-icon']").attr("href") ||
-        $("link[rel='apple-touch-icon-precomposed']").attr("href");
       // YouTube specific: override generic site description with actual video shortDescription
       try {
         const ytUrl = new URL(effectiveUrl);
@@ -336,31 +330,47 @@ export async function fetchPageMetadata(url: string) {
     try {
       if ((!title && !description && !image) || !image) {
         const apiKey = process.env.MICROLINK_API_KEY;
-        if (apiKey) {
-          const mUrl = `https://pro.microlink.io/?url=${encodeURIComponent(url)}&audio=false&video=false&iframe=false&screenshot=false`;
-          const mRes = await fetch(mUrl, { headers: { 'x-api-key': apiKey }, cache: 'no-store' });
-          if (mRes.ok) {
-            const json = await mRes.json();
-            const data = json && json.data ? json.data : {};
-            title = title || data.title;
-            description = description || data.description;
-            image = image || (data.image && (data.image.url || data.image.src));
-            favicon = favicon || (data.logo && (data.logo.url || data.logo.src));
+        const microlinkUrl = `https://api.microlink.io?url=${encodeURIComponent(url)}&audio=false&video=false&screenshot=false&palette=false&meta=true&iframe=false&embed=false&waitUntil=networkidle0`;
+        const microlinkRes = await fetch(microlinkUrl, {
+          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        });
+        if (microlinkRes.ok) {
+          const microlinkData = await microlinkRes.json();
+          if (microlinkData.status === "success") {
+            title = title || microlinkData.data.title;
+            description = description || microlinkData.data.description;
+            image = image || microlinkData.data.image?.url;
           }
         }
       }
-    } catch (svcErr) {
-      console.warn('[fetchPageMetadata] Microlink fallback failed or not configured:', svcErr);
+    } catch (microlinkError) {
+      console.warn('[fetchPageMetadata] Microlink fallback failed:', microlinkError);
     }
 
-    const metadata = {
-      title: title || undefined,
-      description: description || undefined,
-      image: image || undefined,
-      favicon: favicon || undefined,
+    // Clean up title and description
+    if (title) {
+      title = title.replace(/\s+/g, ' ').trim();
+      if (title.length > 200) title = title.substring(0, 200) + '…';
+    }
+
+    if (description) {
+      description = description.replace(/\s+/g, ' ').trim();
+      if (description.length > 300) description = description.substring(0, 300) + '…';
+    }
+
+    console.log(`[fetchPageMetadata] Extracted metadata for ${url}:`, {
+      title: title ? `${title.substring(0, 50)}...` : 'none',
+      description: description ? `${description.substring(0, 50)}...` : 'none',
+      image: image ? 'found' : 'none',
+      favicon: favicon ? 'found' : 'none'
+    });
+
+    return {
+      title,
+      description,
+      image,
+      favicon,
     };
-    console.log(`[fetchPageMetadata] Successfully extracted metadata for ${url}:`, metadata); // Debugging line
-    return metadata;
   } catch (error) {
     console.error(`[fetchPageMetadata] Error fetching metadata for ${url}:`, error);
     return {
