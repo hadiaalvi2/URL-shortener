@@ -63,7 +63,7 @@ export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
 export async function getUrlForSocialMedia(shortCode: string): Promise<UrlData | null> {
   console.log(`[getUrlForSocialMedia] Getting optimized data for social media: ${shortCode}`)
   
-  let data = await getUrlFromKV(shortCode);
+  const data = await getUrlFromKV(shortCode);
   if (!data) {
     console.log(`[getUrlForSocialMedia] No data found for shortCode: ${shortCode}`)
     return null;

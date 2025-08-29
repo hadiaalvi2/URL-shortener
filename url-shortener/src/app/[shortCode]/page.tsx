@@ -61,7 +61,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { shortCode } = await params
     
     // Use social media optimized function for metadata generation
-    let data = await import("@/lib/url-store").then(m => m.getUrlForSocialMedia(shortCode))
+    const data = await import("@/lib/url-store").then(m => m.getUrlForSocialMedia(shortCode))
     const metadataBase = new URL(baseUrl)
 
     if (!data) {
@@ -169,7 +169,7 @@ export default async function RedirectPage(props: Props) {
     console.log(`[RedirectPage] Is Bot: ${isBotRequest}`)
 
     // Use social media optimized function for bots, regular function for users
-    let data = isBotRequest 
+    const data = isBotRequest 
       ? await import("@/lib/url-store").then(m => m.getUrlForSocialMedia(shortCode))
       : await getUrl(shortCode)
 
