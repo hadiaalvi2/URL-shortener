@@ -11,7 +11,7 @@ interface Props {
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!
 
-// Enhanced social media bot detection
+// Enhanced social media bot detection with more bots
 function isSocialMediaBot(userAgent: string): boolean {
   const ua = userAgent.toLowerCase();
   
@@ -41,8 +41,19 @@ function isSocialMediaBot(userAgent: string): boolean {
     'snapchatbot',
     'tumblrbot',
     'mastodonbot',
-    'telegrambot',
     'signal-desktop',
+    // Additional bots
+    'line',
+    'kakaotalk',
+    'wechat',
+    'viber',
+    'messenger',
+    'imessage',
+    'embed',
+    'preview',
+    'unfurl',
+    'card',
+    'scraper'
   ];
 
   return socialBots.some(bot => ua.includes(bot));
@@ -62,32 +73,42 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       }
     }
 
-    const original = data.originalUrl ? new URL(data.originalUrl) : null
-
-    // Force refresh metadata for ALL URLs with weak metadata
-    try {
-      if (isWeakMetadata(data)) {
-        console.log('[generateMetadata] Force refreshing weak metadata')
-        const fresh = await fetchPageMetadata(data.originalUrl)
-        const improved = await updateUrlData(shortCode, fresh)
+    // Always try to refresh metadata if it's weak - this is for social media crawlers
+    if (isWeakMetadata(data)) {
+      console.log('[generateMetadata] Weak metadata detected, force refreshing for social media');
+      try {
+        const fresh = await fetchPageMetadata(data.originalUrl);
+        const improved = await updateUrlData(shortCode, fresh);
         if (improved) {
-          data = improved
+          console.log('[generateMetadata] Successfully improved metadata');
+          data = improved;
         }
+      } catch (error) {
+        console.error('[generateMetadata] Failed to refresh metadata:', error);
       }
-    } catch (error) {
-      console.error('Error refreshing metadata in generateMetadata:', error)
     }
     
+    const original = data.originalUrl ? new URL(data.originalUrl) : null
     const domainFallback = original ? original.hostname : undefined
     const title = data.title || domainFallback || "Shortened Link"
     const description = data.description || data.title || "Click to view content"
     
-    const googleFavicon = original ? `https://www.google.com/s2/favicons?domain=${original.hostname}&sz=256` : undefined
-    const imageUrl = data.image 
-      ? data.image.startsWith('http') 
-        ? data.image 
-        : new URL(data.image, metadataBase).toString()
-      : (data.favicon || googleFavicon)
+    // Better image handling
+    let imageUrl = data.image;
+    if (!imageUrl || imageUrl.includes('google.com/s2/favicons')) {
+      // Try to get a better image for specific sites
+      if (original) {
+        if (original.hostname.includes('youtube.com') || original.hostname.includes('youtu.be')) {
+          const videoId = getYouTubeVideoId(data.originalUrl);
+          if (videoId) {
+            imageUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+          }
+        } else {
+          // Use domain favicon as fallback
+          imageUrl = `https://www.google.com/s2/favicons?domain=${original.hostname}&sz=256`;
+        }
+      }
+    }
 
     return {
       metadataBase,
@@ -115,6 +136,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       other: {
         'og:site_name': 'URL Shortener',
         'twitter:domain': metadataBase.hostname,
+        'twitter:creator': '@urlshortener',
       }
     }
   } catch (error) {
@@ -129,13 +151,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function RedirectPage(props: Props) {
   try {
     const { shortCode } = await props.params
-    const data = await getUrl(shortCode)
+    let data = await getUrl(shortCode)
 
     const headersList = await headers()
     const userAgent = headersList.get("user-agent") || ""
     const isBotRequest = isSocialMediaBot(userAgent)
 
-    console.log(`[RedirectPage] User-Agent: ${userAgent}`)
+    console.log(`[RedirectPage] User-Agent: ${userAgent.substring(0, 100)}...`)
     console.log(`[RedirectPage] Is Bot: ${isBotRequest}`)
 
     if (!data) {
@@ -152,118 +174,113 @@ export default async function RedirectPage(props: Props) {
     }
 
     if (isBotRequest) {
-      console.log(`[RedirectPage] Bot detected, serving preview page for: ${data.originalUrl}`)
+      console.log(`[RedirectPage] Bot detected, serving preview page for: ${data.originalUrl}`);
       
-      const domain = data.originalUrl ? new URL(data.originalUrl).hostname : "unknown"
-      let title = data.title
-      let description = data.description || undefined
-      let imageUrl = data.image
-      let favicon = data.favicon
-
-      // FORCE refresh metadata for social media bots for ALL URLs with weak metadata
-      try {
-        if (isWeakMetadata(data)) {
-          console.log(`[SocialMediaBot] Refreshing metadata for: ${data.originalUrl}`);
-          const fresh = await fetchPageMetadata(data.originalUrl)
-          
-          // Only update if we got better data
-          if (fresh.title && (!title || isWeakMetadata({ title, description }))) {
-            title = fresh.title
-          }
-          if (fresh.description && (!description || description.includes('Enjoy the videos'))) {
-            description = fresh.description
-          }
-          if (fresh.image && (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
-            imageUrl = fresh.image
-          }
-          if (fresh.favicon && (!favicon || favicon.includes('google.com/s2/favicons'))) {
-            favicon = fresh.favicon
-          }
-          
-          // Update the stored data with fresh metadata
-          await updateUrlData(shortCode, { 
-            title: title || data.title, 
-            description: description || data.description, 
-            image: imageUrl || data.image, 
-            favicon: favicon || data.favicon 
-          })
-          
-          console.log(`[SocialMediaBot] Updated metadata:`, { 
-            title, 
-            description: description ? `${description.substring(0, 50)}...` : 'none',
-            hasImage: !!imageUrl,
-            hasFavicon: !!favicon
-          });
-        }
-      } catch (error) {
-        console.error('[SocialMediaBot] Error refreshing metadata:', error);
-      }
-
-      // For YouTube, ensure we have a proper description and favicon
-      if (data.originalUrl && (data.originalUrl.includes('youtube.com') || data.originalUrl.includes('youtu.be'))) {
-        // Ensure we have a proper description (not generic YouTube text)
-        if (!description || description.includes('Enjoy the videos and music')) {
-          description = title || 'Watch this video on YouTube';
-        }
-        
-        // Ensure we have a high-quality thumbnail
-        const videoId = getYouTubeVideoId(data.originalUrl);
-        if (videoId && (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
-          imageUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
-        }
-        
-        // Ensure we have YouTube favicon
-        if (!favicon || favicon.includes('google.com/s2/favicons')) {
-          favicon = 'https://www.youtube.com/favicon.ico';
-        }
-      }
-
-      // Ensure we have a favicon fallback
-      if (!favicon) {
+      // AGGRESSIVELY refresh metadata for social media bots
+      let refreshedData = data;
+      if (isWeakMetadata(data)) {
+        console.log(`[RedirectPage] Weak metadata detected for bot, force refreshing...`);
         try {
-          const urlObj = new URL(data.originalUrl);
+          const fresh = await fetchPageMetadata(data.originalUrl);
+          if (fresh && (fresh.title || fresh.description || fresh.image)) {
+            const improved = await updateUrlData(shortCode, fresh);
+            if (improved) {
+              console.log(`[RedirectPage] Successfully refreshed metadata for bot`);
+              refreshedData = improved;
+            }
+          }
+        } catch (error) {
+          console.error('[RedirectPage] Failed to refresh metadata for bot:', error);
+        }
+      }
+      
+      const domain = refreshedData.originalUrl ? new URL(refreshedData.originalUrl).hostname : "unknown"
+      let title = refreshedData.title || "Shared Content"
+      let description = refreshedData.description || `Content from ${domain}`
+      let imageUrl = refreshedData.image
+      let favicon = refreshedData.favicon
+
+      // Enhanced handling for specific sites
+      if (refreshedData.originalUrl) {
+        if (refreshedData.originalUrl.includes('youtube.com') || refreshedData.originalUrl.includes('youtu.be')) {
+          const videoId = getYouTubeVideoId(refreshedData.originalUrl);
+          if (videoId) {
+            if (!imageUrl || imageUrl.includes('google.com/s2/favicons')) {
+              imageUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+            }
+            if (!favicon || favicon.includes('google.com/s2/favicons')) {
+              favicon = 'https://www.youtube.com/favicon.ico';
+            }
+            if (description && description.includes('Enjoy the videos')) {
+              description = title ? `Watch "${title}" on YouTube` : 'Watch this video on YouTube';
+            }
+          }
+        }
+      }
+
+      // Ensure we have good fallbacks
+      if (!favicon || favicon.includes('google.com/s2/favicons')) {
+        try {
+          const urlObj = new URL(refreshedData.originalUrl);
           favicon = `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`;
         } catch {
           favicon = '/favicon.ico';
         }
       }
 
-      // Enhanced HTML for bots with better Open Graph and Twitter Card support
+      // Enhanced HTML for bots with better metadata
       return (
         <html>
           <head>
-            <title>{title || "Shortened Link"}</title>
+            <title>{title}</title>
             <meta charSet="utf-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1" />
+            
+            {/* Enhanced meta tags */}
+            <meta name="title" content={title} />
+            {description && <meta name="description" content={description} />}
+            <meta name="robots" content="index, follow" />
             
             {/* Favicon */}
             {favicon && <link rel="icon" href={favicon} />}
             
-            {/* Basic meta tags */}
-            {title && <meta name="title" content={title} />}
-            {description && <meta name="description" content={description} />}
-            
             {/* Open Graph / Facebook */}
             <meta property="og:type" content="website" />
-            <meta property="og:url" content={data.originalUrl} />
-            {title && <meta property="og:title" content={title} />}
+            <meta property="og:url" content={refreshedData.originalUrl} />
+            <meta property="og:title" content={title} />
             {description && <meta property="og:description" content={description} />}
             {imageUrl && <meta property="og:image" content={imageUrl} />}
+            {imageUrl && <meta property="og:image:width" content="1200" />}
+            {imageUrl && <meta property="og:image:height" content="630" />}
             <meta property="og:site_name" content="URL Shortener" />
             
             {/* Twitter */}
             <meta name="twitter:card" content={imageUrl ? "summary_large_image" : "summary"} />
-            <meta name="twitter:url" content={data.originalUrl} />
-            {title && <meta name="twitter:title" content={title} />}
+            <meta name="twitter:site" content="@urlshortener" />
+            <meta name="twitter:url" content={refreshedData.originalUrl} />
+            <meta name="twitter:title" content={title} />
             {description && <meta name="twitter:description" content={description} />}
             {imageUrl && <meta name="twitter:image" content={imageUrl} />}
             
             {/* Additional metadata for better compatibility */}
             <meta property="article:author" content="URL Shortener" />
-            <link rel="canonical" href={data.originalUrl} />
+            <link rel="canonical" href={refreshedData.originalUrl} />
+            <meta name="theme-color" content="#1976d2" />
             
             {/* Auto-redirect for non-bot requests that somehow reach here */}
-            <meta httpEquiv="refresh" content="0;url={data.originalUrl}" />
+            <meta httpEquiv="refresh" content="0;url={refreshedData.originalUrl}" />
+            
+            {/* Structured data for better understanding */}
+            <script type="application/ld+json">
+              {JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "WebPage",
+                "url": refreshedData.originalUrl,
+                "name": title,
+                "description": description,
+                "image": imageUrl
+              })}
+            </script>
           </head>
           <body>
             <main className="min-h-screen bg-gray-50 p-6">
@@ -272,7 +289,7 @@ export default async function RedirectPage(props: Props) {
                   <div className="w-full h-48 bg-gray-200 overflow-hidden">
                     <Image 
                       src={imageUrl} 
-                      alt={title || 'Preview Image'}
+                      alt={title}
                       width={800}
                       height={400}
                       className="w-full h-full object-cover"
@@ -287,7 +304,7 @@ export default async function RedirectPage(props: Props) {
                       <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 overflow-hidden">
                         <Image 
                           src={favicon} 
-                          alt="Favicon"
+                          alt="Site Icon"
                           width={24}
                           height={24}
                           className="object-contain"
@@ -297,7 +314,7 @@ export default async function RedirectPage(props: Props) {
                     )}
                     <div className="flex-1 min-w-0">
                       <h1 className="text-xl font-bold text-gray-900 truncate">
-                        {title || 'Shortened Link'}
+                        {title}
                       </h1>
                       <p className="text-sm text-gray-500 truncate">{domain}</p>
                     </div>
@@ -307,13 +324,13 @@ export default async function RedirectPage(props: Props) {
 
                 <div className="p-6">
                   <a
-                    href={data.originalUrl}
+                    href={refreshedData.originalUrl}
                     className="w-full bg-blue-600 text-white py-3 px-4 rounded-md text-center block hover:bg-blue-700 transition-colors"
                   >
                     Continue to Website
                   </a>
                   <p className="text-xs text-gray-500 mt-2 text-center">
-                    You will be redirected to: {data.originalUrl}
+                    You will be redirected to: {refreshedData.originalUrl}
                   </p>
                 </div>
               </div>
