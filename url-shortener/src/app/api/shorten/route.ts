@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
           try {
             const fresh = await Promise.race([
               fetchPageMetadata(normalizedUrl),
-              new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+              new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)) // Increased timeout
             ]);
             if (fresh && (fresh.title || fresh.description || fresh.image)) {
               const improved = await updateUrlData(existingShortCode, fresh as PageMetadata);
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     try {
       metadata = await Promise.race([
         fetchPageMetadata(normalizedUrl),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)) // Increased timeout
       ]) as PageMetadata;
     } catch {
       console.warn("[shorten] Metadata fetch timeout or failed, using fallback metadata");
@@ -84,7 +84,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
- 
     const shortCode = await createShortCode(normalizedUrl, metadata);
     const finalData = await getUrl(shortCode);
     if (!finalData) throw new Error("Failed to retrieve created short link data");
