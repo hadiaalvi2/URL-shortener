@@ -9,30 +9,30 @@ export interface UrlData {
   favicon?: string
   createdAt?: number
   lastUpdated?: number
+  socialMediaOptimized?: boolean // Track if optimized for social media
 }
 
-// Enhanced function to detect weak/generic metadata
+// Enhanced function to detect weak/generic metadata - especially important for social sharing
 export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   if (!data) return true;
   
   const weakTitleIndicators = [
     !data.title,
     data.title && data.title.length < 3,
-    data.title && data.title.toLowerCase().includes('youtube'),
-    data.title && data.title.toLowerCase().includes('video'),
-    data.title && data.title.toLowerCase().includes('website'),
+    data.title && data.title.toLowerCase().includes('youtube') && data.title.toLowerCase().includes('video'),
+    data.title && data.title.toLowerCase() === 'website',
     data.title && data.title.toLowerCase().includes('error'),
     data.title && data.title.toLowerCase().includes('not found'),
+    data.title && data.title.toLowerCase().includes('untitled'),
     data.title && data.title === extractDomainTitle(data.originalUrl || ''),
   ];
 
   const weakDescriptionIndicators = [
     !data.description,
-    data.description && data.description.length < 10,
+    data.description && data.description.length < 15,
     data.description && data.description.includes('Enjoy the videos and music'),
     data.description && data.description.includes('Upload original content'),
-    data.description && data.description.includes('Music video by'),
-    data.description && data.description.toLowerCase().includes('visit'),
+    data.description && data.description.toLowerCase().startsWith('visit '),
   ];
 
   const weakImageIndicators = [
@@ -45,19 +45,71 @@ export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   const hasWeakDescription = weakDescriptionIndicators.some(indicator => indicator);
   const hasWeakImage = weakImageIndicators.some(indicator => indicator);
 
-  // Consider metadata weak if 2 or more aspects are weak
-  const weakCount = [hasWeakTitle, hasWeakDescription, hasWeakImage].filter(Boolean).length;
+  // For social media, we're stricter - need good title AND (description OR image)
+  const isSocialMediaWeak = hasWeakTitle || (hasWeakDescription && hasWeakImage);
   
-  console.log(`[isWeakMetadata] Weakness indicators:`, {
+  console.log(`[isWeakMetadata] Analysis for social sharing:`, {
     title: data.title,
     hasWeakTitle,
     hasWeakDescription,
     hasWeakImage,
-    weakCount,
-    isWeak: weakCount >= 2
+    isSocialMediaWeak
   });
 
-  return weakCount >= 2;
+  return isSocialMediaWeak;
+}
+
+// Special function to get/refresh data specifically for social media bots
+export async function getUrlForSocialMedia(shortCode: string): Promise<UrlData | null> {
+  console.log(`[getUrlForSocialMedia] Getting optimized data for social media: ${shortCode}`)
+  
+  let data = await getUrlFromKV(shortCode);
+  if (!data) {
+    console.log(`[getUrlForSocialMedia] No data found for shortCode: ${shortCode}`)
+    return null;
+  }
+
+  // Check if we need to fetch fresh metadata for social media
+  const needsRefresh = !data.socialMediaOptimized || 
+                      isWeakMetadata(data) || 
+                      (!data.lastUpdated || Date.now() - data.lastUpdated > 2 * 60 * 60 * 1000); // 2 hours
+
+  if (needsRefresh) {
+    console.log(`[getUrlForSocialMedia] Refreshing metadata for social media optimization`)
+    
+    try {
+      const freshMetadata = await Promise.race([
+        fetchPageMetadata(data.originalUrl),
+        new Promise<null>((_, reject) => 
+          setTimeout(() => reject(new Error('Social metadata timeout')), 30000)
+        )
+      ]);
+      
+      if (freshMetadata && (freshMetadata.title || freshMetadata.description || freshMetadata.image)) {
+        console.log(`[getUrlForSocialMedia] Got fresh metadata:`, {
+          title: freshMetadata.title,
+          hasDescription: !!freshMetadata.description,
+          hasImage: !!freshMetadata.image,
+          hasFavicon: !!freshMetadata.favicon
+        })
+        
+        // Update with social media optimized flag
+        const updatedData = await updateUrlData(shortCode, {
+          ...freshMetadata,
+          socialMediaOptimized: true
+        });
+        
+        if (updatedData) {
+          console.log(`[getUrlForSocialMedia] Successfully updated data for social media`)
+          return updatedData;
+        }
+      }
+    } catch (error) {
+      console.error(`[getUrlForSocialMedia] Error refreshing metadata:`, error)
+    }
+  }
+
+  return data;
 }
 
 export async function updateUrlData(shortCode: string, partial: Partial<UrlData>): Promise<UrlData | null> {
@@ -68,7 +120,7 @@ export async function updateUrlData(shortCode: string, partial: Partial<UrlData>
       return null;
     }
 
-    // Smart merging - only update if new data is genuinely better
+    // Smart merging - prioritize better data for social media
     const merged: UrlData = {
       originalUrl: existing.originalUrl,
       title: chooseBetterValue(existing.title, partial.title, 'title'),
@@ -77,6 +129,7 @@ export async function updateUrlData(shortCode: string, partial: Partial<UrlData>
       favicon: chooseBetterValue(existing.favicon, partial.favicon, 'favicon'),
       createdAt: existing.createdAt || Date.now(),
       lastUpdated: Date.now(),
+      socialMediaOptimized: partial.socialMediaOptimized || existing.socialMediaOptimized || false,
     };
 
     await saveUrlToKV(shortCode, merged);
@@ -93,32 +146,37 @@ function chooseBetterValue(existing: string | undefined, newValue: string | unde
   if (!existing) return newValue;
   if (!newValue) return existing;
 
-  // Type-specific quality checks
+  // Enhanced quality checks for social media sharing
   switch (type) {
     case 'title':
-      // Prefer longer, more descriptive titles
-      if (newValue.length > existing.length && newValue.length > 5) return newValue;
-      if (existing.toLowerCase().includes('youtube') && !newValue.toLowerCase().includes('youtube') && newValue.length > 5) return newValue;
-      if (existing.toLowerCase().includes('website') && newValue.length > 5) return newValue;
+      // Prefer specific, longer titles for social media
+      if (newValue.length > existing.length && newValue.length > 10) return newValue;
+      if (existing.toLowerCase().includes('youtube') && existing.toLowerCase().includes('video') && 
+          !newValue.toLowerCase().includes('video') && newValue.length > 5) return newValue;
+      if (existing.toLowerCase() === 'website' && newValue.length > 3) return newValue;
+      if (existing.includes('...') && !newValue.includes('...')) return newValue;
       break;
       
     case 'description':
-      // Prefer longer, more specific descriptions
-      if (newValue.length > existing.length && newValue.length > 20) return newValue;
+      // Prefer descriptive content for social media
+      if (newValue.length > existing.length && newValue.length > 30) return newValue;
       if (existing.includes('Enjoy the videos') && !newValue.includes('Enjoy the videos')) return newValue;
-      if (existing.toLowerCase().includes('visit') && newValue.length > 10) return newValue;
+      if (existing.toLowerCase().startsWith('visit ') && newValue.length > 20) return newValue;
+      if (existing.includes('Upload original content') && newValue.length > 10) return newValue;
       break;
       
     case 'image':
-      // Prefer non-favicon images
-      if (!existing.includes('favicons') && newValue.includes('favicons')) return existing;
+      // Prefer high-quality images for social media
       if (existing.includes('favicons') && !newValue.includes('favicons')) return newValue;
       if (newValue.includes('maxresdefault') && !existing.includes('maxresdefault')) return newValue;
+      if (newValue.includes('hqdefault') && existing.includes('default.jpg')) return newValue;
+      if (newValue.includes('1200') || newValue.includes('og:image')) return newValue;
       break;
       
     case 'favicon':
       // Prefer specific favicons over generic ones
       if (existing.includes('favicons') && !newValue.includes('favicons')) return newValue;
+      if (newValue.includes('apple-touch-icon') && !existing.includes('apple-touch-icon')) return newValue;
       break;
   }
 
@@ -172,23 +230,20 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
       const existingData = await getUrlFromKV(existingShortCode);
       
       if (existingData) {
-        // Check if we should refresh the metadata
-        const shouldRefresh = isWeakMetadata(existingData) || 
-                            (!existingData.lastUpdated || 
-                             Date.now() - existingData.lastUpdated > 24 * 60 * 60 * 1000); // 24 hours
-
-        if (shouldRefresh) {
-          console.log(`[createShortCode] Refreshing metadata for existing URL`);
+        // For existing URLs, always try to ensure social media optimization
+        if (!existingData.socialMediaOptimized || isWeakMetadata(existingData)) {
+          console.log(`[createShortCode] Optimizing existing URL for social media`);
           try {
             const freshMetadata = await fetchPageMetadata(normalizedUrl);
-            if (freshMetadata.title && freshMetadata.title !== extractDomainTitle(normalizedUrl)) {
-              await updateUrlData(existingShortCode, freshMetadata);
-              const updatedData = await getUrlFromKV(existingShortCode);
-              console.log(`[createShortCode] Metadata refreshed for existing short code: ${existingShortCode}`)
-              return existingShortCode;
+            if (freshMetadata && (freshMetadata.title || freshMetadata.description || freshMetadata.image)) {
+              await updateUrlData(existingShortCode, {
+                ...freshMetadata,
+                socialMediaOptimized: true
+              });
+              console.log(`[createShortCode] Social media optimization completed for existing URL`);
             }
           } catch (refreshError) {
-            console.warn(`[createShortCode] Failed to refresh metadata:`, refreshError);
+            console.warn(`[createShortCode] Failed to optimize existing URL:`, refreshError);
           }
         }
         
@@ -219,15 +274,15 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
 
   console.log(`[createShortCode] Generated unique short code: ${shortCode}`);
 
-  // Enhanced metadata fetching with multiple attempts
+  // Enhanced metadata fetching for social media optimization
   let enhancedMetadata = metadata || {};
   
-  console.log(`[createShortCode] Fetching enhanced metadata for: ${normalizedUrl}`);
+  console.log(`[createShortCode] Fetching social media optimized metadata for: ${normalizedUrl}`);
   try {
     const fetchedMetadata = await Promise.race([
       fetchPageMetadata(normalizedUrl),
       new Promise<null>((_, reject) => 
-        setTimeout(() => reject(new Error('Metadata fetch timeout')), 30000)
+        setTimeout(() => reject(new Error('Metadata fetch timeout')), 35000)
       )
     ]);
     
@@ -237,13 +292,15 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
         description: chooseBetterValue(enhancedMetadata.description, fetchedMetadata.description, 'description') || fetchedMetadata.description,
         image: chooseBetterValue(enhancedMetadata.image, fetchedMetadata.image, 'image') || fetchedMetadata.image,
         favicon: chooseBetterValue(enhancedMetadata.favicon, fetchedMetadata.favicon, 'favicon') || fetchedMetadata.favicon,
+        socialMediaOptimized: true, // Mark as optimized since we fetched fresh data
       };
       
-      console.log(`[createShortCode] Enhanced metadata:`, {
+      console.log(`[createShortCode] Enhanced metadata for social media:`, {
         title: enhancedMetadata.title ? `${enhancedMetadata.title.substring(0, 50)}...` : 'none',
         description: enhancedMetadata.description ? `${enhancedMetadata.description.substring(0, 50)}...` : 'none',
         hasImage: !!enhancedMetadata.image,
         hasFavicon: !!enhancedMetadata.favicon,
+        socialOptimized: enhancedMetadata.socialMediaOptimized
       });
     }
   } catch (error) {
@@ -256,14 +313,16 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
         title: enhancedMetadata.title || domain.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
         description: enhancedMetadata.description || `Visit ${domain}`,
         image: enhancedMetadata.image || "",
-        favicon: enhancedMetadata.favicon || `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`
+        favicon: enhancedMetadata.favicon || `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`,
+        socialMediaOptimized: false, // Mark as not optimized since we used fallback
       };
     } catch {
       enhancedMetadata = {
         title: "Website",
         description: "",
         image: "",
-        favicon: "/favicon.ico"
+        favicon: "/favicon.ico",
+        socialMediaOptimized: false,
       };
     }
   }
@@ -277,14 +336,16 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     favicon: enhancedMetadata.favicon || getDefaultFavicon(normalizedUrl),
     createdAt: Date.now(),
     lastUpdated: Date.now(),
+    socialMediaOptimized: enhancedMetadata.socialMediaOptimized || false,
   }
   
-  console.log(`[createShortCode] Final URL data:`, {
+  console.log(`[createShortCode] Final URL data for social sharing:`, {
     originalUrl: urlData.originalUrl,
     title: urlData.title,
     description: urlData.description ? `${urlData.description.substring(0, 50)}...` : 'none',
     hasImage: !!urlData.image,
     hasFavicon: !!urlData.favicon,
+    socialMediaOptimized: urlData.socialMediaOptimized,
   });
 
   // Store the data with error handling
