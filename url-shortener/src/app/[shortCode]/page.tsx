@@ -11,7 +11,7 @@ interface Props {
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!
 
-// Enhanced social media bot detection with more bots
+
 function isSocialMediaBot(userAgent: string): boolean {
   const ua = userAgent.toLowerCase();
   
@@ -42,7 +42,6 @@ function isSocialMediaBot(userAgent: string): boolean {
     'tumblrbot',
     'mastodonbot',
     'signal-desktop',
-    // Additional bots
     'line',
     'kakaotalk',
     'wechat',
@@ -73,7 +72,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       }
     }
 
-    // Always try to refresh metadata if it's weak - this is for social media crawlers
+   
     if (isWeakMetadata(data)) {
       console.log('[generateMetadata] Weak metadata detected, force refreshing for social media');
       try {
@@ -93,7 +92,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const title = data.title || domainFallback || "Shortened Link"
     const description = data.description || data.title || "Click to view content"
     
-    // Better image handling
+   
     let imageUrl = data.image;
     if (!imageUrl || imageUrl.includes('google.com/s2/favicons')) {
       // Try to get a better image for specific sites
@@ -176,7 +175,7 @@ export default async function RedirectPage(props: Props) {
     if (isBotRequest) {
       console.log(`[RedirectPage] Bot detected, serving preview page for: ${data.originalUrl}`);
       
-      // AGGRESSIVELY refresh metadata for social media bots
+      
       const refreshedData = await (async () => {
         if (isWeakMetadata(data)) {
           console.log(`[RedirectPage] Weak metadata detected for bot, force refreshing...`);
@@ -202,7 +201,7 @@ export default async function RedirectPage(props: Props) {
       let imageUrl = refreshedData.image
       let favicon = refreshedData.favicon
 
-      // Enhanced handling for specific sites
+   
       if (refreshedData.originalUrl) {
         if (refreshedData.originalUrl.includes('youtube.com') || refreshedData.originalUrl.includes('youtu.be')) {
           const videoId = getYouTubeVideoId(refreshedData.originalUrl);
@@ -230,7 +229,7 @@ export default async function RedirectPage(props: Props) {
         }
       }
 
-      // Enhanced HTML for bots with better metadata
+      
       return (
         <html>
           <head>

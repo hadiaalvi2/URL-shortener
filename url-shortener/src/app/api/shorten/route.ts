@@ -12,7 +12,7 @@ interface PageMetadata {
   favicon?: string;
 }
 
-// Timeout wrapper for metadata fetching
+
 async function fetchMetadataWithTimeout(url: string, timeoutMs = 8000): Promise<PageMetadata> {
   return Promise.race([
     fetchPageMetadata(url),
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[shorten] Processing URL: ${url}, force: ${force}`);
 
-    // ✅ Normalize URL quickly
+    //Normalize URL quickly
     let normalizedUrl: string;
     try {
       let urlToParse = url.trim();
@@ -85,12 +85,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`[shorten] Normalized URL: ${normalizedUrl}`);
 
-    // ✅ Check if URL already exists (quick KV lookup)
+    //Check if URL already exists (quick KV lookup)
     const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`);
     if (existingShortCode) {
       const existingData = await getUrl(existingShortCode);
       if (existingData) {
-        // Only refresh metadata if forced or if we have time budget and weak metadata
+        //Only refresh metadata if forced or if we have time budget and weak metadata
         const elapsed = Date.now() - startTime;
         const shouldRefresh = force || (elapsed < 5000 && isWeakMetadata(existingData));
         
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ✅ Create new short code with time-bounded metadata fetching
+    //Create new short code with time-bounded metadata fetching
     console.log(`[shorten] Creating new short code for: ${normalizedUrl}`);
     
     // Start with fast fallback metadata
@@ -187,7 +187,6 @@ export async function POST(request: NextRequest) {
       console.log(`[shorten] Skipping metadata fetch due to time constraints (${elapsed}ms elapsed)`);
     }
 
-    // Create the short code quickly
     const shortCode = await createShortCode(normalizedUrl, metadata);
     const finalData = await getUrl(shortCode);
     
@@ -213,8 +212,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const totalTime = Date.now() - startTime;
     console.error(`Error in shorten API after ${totalTime}ms:`, error);
-    
-    // Return a more specific error message
+  
     if (error instanceof Error && error.message.includes('timeout')) {
       return NextResponse.json(
         { error: 'Request took too long. The link was created but metadata may be limited.' },
