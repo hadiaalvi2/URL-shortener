@@ -17,6 +17,7 @@ function isSocialMediaBot(userAgent: string): boolean {
   
   const socialBots = [
     'facebookexternalhit',
+    'facebookcatalog',
     'twitterbot',
     'linkedinbot', 
     'whatsapp',
@@ -33,6 +34,7 @@ function isSocialMediaBot(userAgent: string): boolean {
     'bingbot',
     'yandexbot',
     'baiduspider',
+    'duckduckbot',
     'crawler',
     'spider',
     'meta-externalagent',
@@ -41,8 +43,13 @@ function isSocialMediaBot(userAgent: string): boolean {
     'snapchatbot',
     'tumblrbot',
     'mastodonbot',
-    'telegrambot',
     'signal-desktop',
+    'zoom',
+    'msteams',
+    'line',
+    'viber',
+    'kakaotalk',
+    'wechat',
   ];
 
   return socialBots.some(bot => ua.includes(bot));
@@ -64,14 +71,32 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     const original = data.originalUrl ? new URL(data.originalUrl) : null
 
-    // Force refresh metadata for ALL URLs with weak metadata
+    // Enhanced metadata refresh logic
     try {
-      if (isWeakMetadata(data)) {
-        console.log('[generateMetadata] Force refreshing weak metadata')
-        const fresh = await fetchPageMetadata(data.originalUrl)
-        const improved = await updateUrlData(shortCode, fresh)
-        if (improved) {
-          data = improved
+      const shouldForceRefresh = isWeakMetadata(data) || 
+                                (!data.lastUpdated || 
+                                 Date.now() - data.lastUpdated > 12 * 60 * 60 * 1000); // 12 hours
+      
+      if (shouldForceRefresh) {
+        console.log('[generateMetadata] Force refreshing metadata due to:', {
+          isWeak: isWeakMetadata(data),
+          isOld: !data.lastUpdated || Date.now() - data.lastUpdated > 12 * 60 * 60 * 1000,
+          age: data.lastUpdated ? `${Math.round((Date.now() - data.lastUpdated) / (60 * 60 * 1000))}h` : 'unknown'
+        });
+        
+        const fresh = await Promise.race([
+          fetchPageMetadata(data.originalUrl),
+          new Promise<null>((_, reject) => 
+            setTimeout(() => reject(new Error('Metadata refresh timeout')), 20000)
+          )
+        ]);
+        
+        if (fresh && (fresh.title || fresh.description || fresh.image)) {
+          const improved = await updateUrlData(shortCode, fresh);
+          if (improved) {
+            data = improved;
+            console.log('[generateMetadata] Metadata successfully refreshed');
+          }
         }
       }
     } catch (error) {
@@ -82,12 +107,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const title = data.title || domainFallback || "Shortened Link"
     const description = data.description || data.title || "Click to view content"
     
-    const googleFavicon = original ? `https://www.google.com/s2/favicons?domain=${original.hostname}&sz=256` : undefined
-    const imageUrl = data.image 
-      ? data.image.startsWith('http') 
-        ? data.image 
-        : new URL(data.image, metadataBase).toString()
-      : (data.favicon || googleFavicon)
+    // Enhanced image handling
+    let imageUrl = data.image;
+    if (!imageUrl || imageUrl.includes('google.com/s2/favicons')) {
+      // Try to get a better image
+      const googleFavicon = original ? `https://www.google.com/s2/favicons?domain=${original.hostname}&sz=512` : undefined;
+      imageUrl = data.favicon && !data.favicon.includes('google.com/s2/favicons') ? data.favicon : googleFavicon;
+    }
+
+    // Ensure absolute URLs
+    if (imageUrl && !imageUrl.startsWith('http')) {
+      try {
+        imageUrl = new URL(imageUrl, metadataBase).toString();
+      } catch {
+        imageUrl = undefined;
+      }
+    }
 
     return {
       metadataBase,
@@ -115,6 +150,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       other: {
         'og:site_name': 'URL Shortener',
         'twitter:domain': metadataBase.hostname,
+        'article:author': 'URL Shortener',
       }
     }
   } catch (error) {
@@ -135,7 +171,7 @@ export default async function RedirectPage(props: Props) {
     const userAgent = headersList.get("user-agent") || ""
     const isBotRequest = isSocialMediaBot(userAgent)
 
-    console.log(`[RedirectPage] User-Agent: ${userAgent}`)
+    console.log(`[RedirectPage] User-Agent: ${userAgent.substring(0, 100)}...`)
     console.log(`[RedirectPage] Is Bot: ${isBotRequest}`)
 
     if (!data) {
@@ -160,61 +196,90 @@ export default async function RedirectPage(props: Props) {
       let imageUrl = data.image
       let favicon = data.favicon
 
-      // FORCE refresh metadata for social media bots for ALL URLs with weak metadata
+      // Enhanced bot metadata refresh
       try {
-        if (isWeakMetadata(data)) {
+        const shouldRefresh = isWeakMetadata(data) || 
+                            (!data.lastUpdated || 
+                             Date.now() - data.lastUpdated > 6 * 60 * 60 * 1000); // 6 hours for bots
+        
+        if (shouldRefresh) {
           console.log(`[SocialMediaBot] Refreshing metadata for: ${data.originalUrl}`);
-          const fresh = await fetchPageMetadata(data.originalUrl)
           
-          // Only update if we got better data
-          if (fresh.title && (!title || isWeakMetadata({ title, description }))) {
-            title = fresh.title
-          }
-          if (fresh.description && (!description || description.includes('Enjoy the videos'))) {
-            description = fresh.description
-          }
-          if (fresh.image && (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
-            imageUrl = fresh.image
-          }
-          if (fresh.favicon && (!favicon || favicon.includes('google.com/s2/favicons'))) {
-            favicon = fresh.favicon
-          }
+          const fresh = await Promise.race([
+            fetchPageMetadata(data.originalUrl),
+            new Promise<null>((_, reject) => 
+              setTimeout(() => reject(new Error('Bot metadata refresh timeout')), 15000)
+            )
+          ]);
           
-          // Update the stored data with fresh metadata
-          await updateUrlData(shortCode, { 
-            title: title || data.title, 
-            description: description || data.description, 
-            image: imageUrl || data.image, 
-            favicon: favicon || data.favicon 
-          })
-          
-          console.log(`[SocialMediaBot] Updated metadata:`, { 
-            title, 
-            description: description ? `${description.substring(0, 50)}...` : 'none',
-            hasImage: !!imageUrl,
-            hasFavicon: !!favicon
-          });
+          if (fresh) {
+            // Smart updating - only use better data
+            if (fresh.title && fresh.title.length > 3 && 
+                (!title || title.length < fresh.title.length || isWeakTitle(title))) {
+              title = fresh.title;
+            }
+            
+            if (fresh.description && fresh.description.length > 10 && 
+                (!description || description.includes('Enjoy the videos') || description.length < fresh.description.length)) {
+              description = fresh.description;
+            }
+            
+            if (fresh.image && !fresh.image.includes('google.com/s2/favicons') && 
+                (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
+              imageUrl = fresh.image;
+            }
+            
+            if (fresh.favicon && !fresh.favicon.includes('google.com/s2/favicons') && 
+                (!favicon || favicon.includes('google.com/s2/favicons'))) {
+              favicon = fresh.favicon;
+            }
+            
+            // Update stored data
+            await updateUrlData(shortCode, { 
+              title: title || data.title, 
+              description: description || data.description, 
+              image: imageUrl || data.image, 
+              favicon: favicon || data.favicon 
+            });
+            
+            console.log(`[SocialMediaBot] Updated metadata:`, { 
+              title, 
+              description: description ? `${description.substring(0, 50)}...` : 'none',
+              hasImage: !!imageUrl,
+              hasFavicon: !!favicon
+            });
+          }
         }
       } catch (error) {
         console.error('[SocialMediaBot] Error refreshing metadata:', error);
       }
 
-      // For YouTube, ensure we have a proper description and favicon
-      if (data.originalUrl && (data.originalUrl.includes('youtube.com') || data.originalUrl.includes('youtu.be'))) {
-        // Ensure we have a proper description (not generic YouTube text)
-        if (!description || description.includes('Enjoy the videos and music')) {
-          description = title || 'Watch this video on YouTube';
+      // Enhanced site-specific handling
+      if (data.originalUrl) {
+        const urlLower = data.originalUrl.toLowerCase();
+        
+        // YouTube specific enhancements
+        if (urlLower.includes('youtube.com') || urlLower.includes('youtu.be')) {
+          const videoId = getYouTubeVideoId(data.originalUrl);
+          
+          if (!description || description.includes('Enjoy the videos and music')) {
+            description = title || 'Watch this video on YouTube';
+          }
+          
+          if (videoId && (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
+            imageUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+          }
+          
+          if (!favicon || favicon.includes('google.com/s2/favicons')) {
+            favicon = 'https://www.youtube.com/s/desktop/12d6b690/img/favicon_32x32.png';
+          }
         }
         
-        // Ensure we have a high-quality thumbnail
-        const videoId = getYouTubeVideoId(data.originalUrl);
-        if (videoId && (!imageUrl || imageUrl.includes('google.com/s2/favicons'))) {
-          imageUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
-        }
-        
-        // Ensure we have YouTube favicon
-        if (!favicon || favicon.includes('google.com/s2/favicons')) {
-          favicon = 'https://www.youtube.com/favicon.ico';
+        // Twitter/X specific enhancements
+        else if (urlLower.includes('twitter.com') || urlLower.includes('x.com')) {
+          if (!favicon || favicon.includes('google.com/s2/favicons')) {
+            favicon = 'https://abs.twimg.com/favicons/twitter.ico';
+          }
         }
       }
 
@@ -228,7 +293,7 @@ export default async function RedirectPage(props: Props) {
         }
       }
 
-      // Enhanced HTML for bots with better Open Graph and Twitter Card support
+      // Enhanced HTML for bots with comprehensive metadata
       return (
         <html>
           <head>
@@ -249,6 +314,8 @@ export default async function RedirectPage(props: Props) {
             {title && <meta property="og:title" content={title} />}
             {description && <meta property="og:description" content={description} />}
             {imageUrl && <meta property="og:image" content={imageUrl} />}
+            {imageUrl && <meta property="og:image:width" content="1200" />}
+            {imageUrl && <meta property="og:image:height" content="630" />}
             <meta property="og:site_name" content="URL Shortener" />
             
             {/* Twitter */}
@@ -261,9 +328,10 @@ export default async function RedirectPage(props: Props) {
             {/* Additional metadata for better compatibility */}
             <meta property="article:author" content="URL Shortener" />
             <link rel="canonical" href={data.originalUrl} />
+            <meta name="robots" content="noindex, nofollow" />
             
             {/* Auto-redirect for non-bot requests that somehow reach here */}
-            <meta httpEquiv="refresh" content="0;url={data.originalUrl}" />
+            <meta httpEquiv="refresh" content="1;url={data.originalUrl}" />
           </head>
           <body>
             <main className="min-h-screen bg-gray-50 p-6">
@@ -277,6 +345,9 @@ export default async function RedirectPage(props: Props) {
                       height={400}
                       className="w-full h-full object-cover"
                       unoptimized={!imageUrl.startsWith(baseUrl)}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
                     />
                   </div>
                 )}
@@ -292,6 +363,9 @@ export default async function RedirectPage(props: Props) {
                           height={24}
                           className="object-contain"
                           unoptimized={!favicon.startsWith(baseUrl)}
+                          onError={(e) => {
+                            e.currentTarget.src = '/favicon.ico';
+                          }}
                         />
                       </div>
                     )}
@@ -302,7 +376,7 @@ export default async function RedirectPage(props: Props) {
                       <p className="text-sm text-gray-500 truncate">{domain}</p>
                     </div>
                   </div>
-                  {description && <p className="text-gray-700">{description}</p>}
+                  {description && <p className="text-gray-700 line-clamp-3">{description}</p>}
                 </div>
 
                 <div className="p-6">
@@ -312,7 +386,7 @@ export default async function RedirectPage(props: Props) {
                   >
                     Continue to Website
                   </a>
-                  <p className="text-xs text-gray-500 mt-2 text-center">
+                  <p className="text-xs text-gray-500 mt-2 text-center break-all">
                     You will be redirected to: {data.originalUrl}
                   </p>
                 </div>
@@ -350,18 +424,38 @@ export default async function RedirectPage(props: Props) {
   }
 }
 
-// Helper function to extract YouTube video ID
+// Helper function to check if a title is weak/generic
+function isWeakTitle(title: string): boolean {
+  if (!title || title.length < 3) return true;
+  
+  const weakIndicators = [
+    'youtube',
+    'video',
+    'website', 
+    'page',
+    'home',
+    'error',
+    'not found',
+    'untitled'
+  ];
+  
+  const titleLower = title.toLowerCase();
+  return weakIndicators.some(indicator => titleLower.includes(indicator));
+}
+
+// Enhanced YouTube video ID extraction
 function getYouTubeVideoId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
     /youtube\.com\/watch\?v=([^&]+)/,
     /youtube\.com\/embed\/([^\/]+)/,
-    /youtu\.be\/([^\/]+)/
+    /youtu\.be\/([^\/]+)/,
+    /youtube\.com\/v\/([^\/]+)/,
   ];
   
   for (const pattern of patterns) {
     const match = url.match(pattern);
-    if (match && match[1]) {
+    if (match && match[1] && match[1].length === 11) {
       return match[1];
     }
   }

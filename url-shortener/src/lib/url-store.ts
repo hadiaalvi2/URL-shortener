@@ -7,26 +7,57 @@ export interface UrlData {
   description?: string
   image?: string
   favicon?: string
+  createdAt?: number
+  lastUpdated?: number
 }
 
-// Enhanced function to detect generic metadata
+// Enhanced function to detect weak/generic metadata
 export function isWeakMetadata(data?: Partial<UrlData> | null): boolean {
   if (!data) return true;
   
-  const hasGenericTitle = !data.title || 
-                         data.title.includes('YouTube') || 
-                         data.title.includes('Video') ||
-                         data.title.length < 3;
+  const weakTitleIndicators = [
+    !data.title,
+    data.title && data.title.length < 3,
+    data.title && data.title.toLowerCase().includes('youtube'),
+    data.title && data.title.toLowerCase().includes('video'),
+    data.title && data.title.toLowerCase().includes('website'),
+    data.title && data.title.toLowerCase().includes('error'),
+    data.title && data.title.toLowerCase().includes('not found'),
+    data.title && data.title === extractDomainTitle(data.originalUrl || ''),
+  ];
+
+  const weakDescriptionIndicators = [
+    !data.description,
+    data.description && data.description.length < 10,
+    data.description && data.description.includes('Enjoy the videos and music'),
+    data.description && data.description.includes('Upload original content'),
+    data.description && data.description.includes('Music video by'),
+    data.description && data.description.toLowerCase().includes('visit'),
+  ];
+
+  const weakImageIndicators = [
+    !data.image,
+    data.image && data.image.includes('google.com/s2/favicons'),
+    data.image && data.image.includes('default'),
+  ];
+
+  const hasWeakTitle = weakTitleIndicators.some(indicator => indicator);
+  const hasWeakDescription = weakDescriptionIndicators.some(indicator => indicator);
+  const hasWeakImage = weakImageIndicators.some(indicator => indicator);
+
+  // Consider metadata weak if 2 or more aspects are weak
+  const weakCount = [hasWeakTitle, hasWeakDescription, hasWeakImage].filter(Boolean).length;
   
-  const hasGenericDescription = !data.description || 
-                               data.description.includes('Enjoy the videos and music') ||
-                               data.description.includes('Upload original content') ||
-                               data.description.includes('Music video by') ||
-                               data.description.length < 10;
-  
-  const hasNoImage = !data.image || data.image.includes('google.com/s2/favicons');
-  
-  return hasGenericTitle || hasGenericDescription || hasNoImage;
+  console.log(`[isWeakMetadata] Weakness indicators:`, {
+    title: data.title,
+    hasWeakTitle,
+    hasWeakDescription,
+    hasWeakImage,
+    weakCount,
+    isWeak: weakCount >= 2
+  });
+
+  return weakCount >= 2;
 }
 
 export async function updateUrlData(shortCode: string, partial: Partial<UrlData>): Promise<UrlData | null> {
@@ -37,13 +68,15 @@ export async function updateUrlData(shortCode: string, partial: Partial<UrlData>
       return null;
     }
 
-    // Merge with existing data, preferring new data when it's better
+    // Smart merging - only update if new data is genuinely better
     const merged: UrlData = {
       originalUrl: existing.originalUrl,
-      title: partial.title && partial.title.length > 3 ? partial.title : existing.title,
-      description: partial.description && partial.description.length > 10 ? partial.description : existing.description,
-      image: partial.image && !partial.image.includes('google.com/s2/favicons') ? partial.image : existing.image,
-      favicon: partial.favicon ? partial.favicon : existing.favicon,
+      title: chooseBetterValue(existing.title, partial.title, 'title'),
+      description: chooseBetterValue(existing.description, partial.description, 'description'),
+      image: chooseBetterValue(existing.image, partial.image, 'image'),
+      favicon: chooseBetterValue(existing.favicon, partial.favicon, 'favicon'),
+      createdAt: existing.createdAt || Date.now(),
+      lastUpdated: Date.now(),
     };
 
     await saveUrlToKV(shortCode, merged);
@@ -53,6 +86,43 @@ export async function updateUrlData(shortCode: string, partial: Partial<UrlData>
     console.error(`[updateUrlData] Error updating URL data for ${shortCode}:`, error);
     return null;
   }
+}
+
+function chooseBetterValue(existing: string | undefined, newValue: string | undefined, type: string): string | undefined {
+  if (!existing && !newValue) return undefined;
+  if (!existing) return newValue;
+  if (!newValue) return existing;
+
+  // Type-specific quality checks
+  switch (type) {
+    case 'title':
+      // Prefer longer, more descriptive titles
+      if (newValue.length > existing.length && newValue.length > 5) return newValue;
+      if (existing.toLowerCase().includes('youtube') && !newValue.toLowerCase().includes('youtube') && newValue.length > 5) return newValue;
+      if (existing.toLowerCase().includes('website') && newValue.length > 5) return newValue;
+      break;
+      
+    case 'description':
+      // Prefer longer, more specific descriptions
+      if (newValue.length > existing.length && newValue.length > 20) return newValue;
+      if (existing.includes('Enjoy the videos') && !newValue.includes('Enjoy the videos')) return newValue;
+      if (existing.toLowerCase().includes('visit') && newValue.length > 10) return newValue;
+      break;
+      
+    case 'image':
+      // Prefer non-favicon images
+      if (!existing.includes('favicons') && newValue.includes('favicons')) return existing;
+      if (existing.includes('favicons') && !newValue.includes('favicons')) return newValue;
+      if (newValue.includes('maxresdefault') && !existing.includes('maxresdefault')) return newValue;
+      break;
+      
+    case 'favicon':
+      // Prefer specific favicons over generic ones
+      if (existing.includes('favicons') && !newValue.includes('favicons')) return newValue;
+      break;
+  }
+
+  return existing; // Keep existing if no clear improvement
 }
 
 export async function getUrlFromKV(shortCode: string): Promise<UrlData | null> {
@@ -67,7 +137,11 @@ export async function getUrlFromKV(shortCode: string): Promise<UrlData | null> {
 
 export async function saveUrlToKV(shortCode: string, data: UrlData) {
   try {
-    await kv.set(`url:${shortCode}`, data);
+    const dataToSave = {
+      ...data,
+      lastUpdated: Date.now(),
+    };
+    await kv.set(`url:${shortCode}`, dataToSave);
     console.log(`[saveUrlToKV] Successfully saved data for ${shortCode}`);
   } catch (error) {
     console.error(`[saveUrlToKV] Error saving URL data for ${shortCode}:`, error);
@@ -89,20 +163,39 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
   const normalizedUrl = normalizeUrl(url);
   console.log(`[createShortCode] Normalized URL: ${normalizedUrl}`);
 
-  // Check if URL already exists in KV using a direct lookup
+  // Check if URL already exists
   try {
     const existingShortCode = await kv.get<string>(`url_to_code:${normalizedUrl}`);
 
     if (existingShortCode) {
       console.log(`[createShortCode] Found existing short code: ${existingShortCode}`);
-      // Verify the short code still exists in KV
       const existingData = await getUrlFromKV(existingShortCode);
+      
       if (existingData) {
+        // Check if we should refresh the metadata
+        const shouldRefresh = isWeakMetadata(existingData) || 
+                            (!existingData.lastUpdated || 
+                             Date.now() - existingData.lastUpdated > 24 * 60 * 60 * 1000); // 24 hours
+
+        if (shouldRefresh) {
+          console.log(`[createShortCode] Refreshing metadata for existing URL`);
+          try {
+            const freshMetadata = await fetchPageMetadata(normalizedUrl);
+            if (freshMetadata.title && freshMetadata.title !== extractDomainTitle(normalizedUrl)) {
+              await updateUrlData(existingShortCode, freshMetadata);
+              const updatedData = await getUrlFromKV(existingShortCode);
+              console.log(`[createShortCode] Metadata refreshed for existing short code: ${existingShortCode}`)
+              return existingShortCode;
+            }
+          } catch (refreshError) {
+            console.warn(`[createShortCode] Failed to refresh metadata:`, refreshError);
+          }
+        }
+        
         console.log(`[createShortCode] Reusing existing short code: ${existingShortCode}`);
         return existingShortCode;
       } else {
         console.warn(`[createShortCode] Orphaned URL mapping found, will create new short code`);
-        // Clean up the orphaned mapping
         await kv.del(`url_to_code:${normalizedUrl}`);
       }
     }
@@ -126,37 +219,53 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
 
   console.log(`[createShortCode] Generated unique short code: ${shortCode}`);
 
-  // Prepare metadata - use provided metadata or fetch fresh
+  // Enhanced metadata fetching with multiple attempts
   let enhancedMetadata = metadata || {};
   
-  // Always try to fetch fresh metadata for better results
+  console.log(`[createShortCode] Fetching enhanced metadata for: ${normalizedUrl}`);
   try {
-    console.log(`[createShortCode] Fetching fresh metadata for: ${normalizedUrl}`);
-    const fetchedMetadata = await fetchPageMetadata(normalizedUrl);
+    const fetchedMetadata = await Promise.race([
+      fetchPageMetadata(normalizedUrl),
+      new Promise<null>((_, reject) => 
+        setTimeout(() => reject(new Error('Metadata fetch timeout')), 30000)
+      )
+    ]);
     
-    // Only use fetched metadata if it's better than what we have
-    enhancedMetadata = {
-      title: fetchedMetadata.title && fetchedMetadata.title.length > 3 ? fetchedMetadata.title : enhancedMetadata.title,
-      description: fetchedMetadata.description && fetchedMetadata.description.length > 10 ? fetchedMetadata.description : enhancedMetadata.description,
-      image: fetchedMetadata.image && !fetchedMetadata.image.includes('google.com/s2/favicons') ? fetchedMetadata.image : enhancedMetadata.image,
-      favicon: fetchedMetadata.favicon ? fetchedMetadata.favicon : enhancedMetadata.favicon,
-    };
-    
-    console.log(`[createShortCode] Enhanced metadata:`, {
-      title: enhancedMetadata.title ? `${enhancedMetadata.title.substring(0, 50)}...` : 'none',
-      description: enhancedMetadata.description ? `${enhancedMetadata.description.substring(0, 50)}...` : 'none',
-      hasImage: !!enhancedMetadata.image,
-      hasFavicon: !!enhancedMetadata.favicon,
-    });
+    if (fetchedMetadata) {
+      enhancedMetadata = {
+        title: chooseBetterValue(enhancedMetadata.title, fetchedMetadata.title, 'title') || fetchedMetadata.title,
+        description: chooseBetterValue(enhancedMetadata.description, fetchedMetadata.description, 'description') || fetchedMetadata.description,
+        image: chooseBetterValue(enhancedMetadata.image, fetchedMetadata.image, 'image') || fetchedMetadata.image,
+        favicon: chooseBetterValue(enhancedMetadata.favicon, fetchedMetadata.favicon, 'favicon') || fetchedMetadata.favicon,
+      };
+      
+      console.log(`[createShortCode] Enhanced metadata:`, {
+        title: enhancedMetadata.title ? `${enhancedMetadata.title.substring(0, 50)}...` : 'none',
+        description: enhancedMetadata.description ? `${enhancedMetadata.description.substring(0, 50)}...` : 'none',
+        hasImage: !!enhancedMetadata.image,
+        hasFavicon: !!enhancedMetadata.favicon,
+      });
+    }
   } catch (error) {
-    console.error(`[createShortCode] Error fetching enhanced metadata:`, error);
-    // Fallback to domain-based metadata
-    enhancedMetadata = {
-      title: enhancedMetadata.title || extractDomainTitle(normalizedUrl),
-      description: enhancedMetadata.description || "",
-      image: enhancedMetadata.image || "",
-      favicon: enhancedMetadata.favicon || getDefaultFavicon(normalizedUrl)
-    };
+    console.warn(`[createShortCode] Enhanced metadata fetch failed:`, error);
+    // Create fallback metadata
+    try {
+      const urlObj = new URL(normalizedUrl);
+      const domain = urlObj.hostname.replace('www.', '');
+      enhancedMetadata = {
+        title: enhancedMetadata.title || domain.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+        description: enhancedMetadata.description || `Visit ${domain}`,
+        image: enhancedMetadata.image || "",
+        favicon: enhancedMetadata.favicon || `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`
+      };
+    } catch {
+      enhancedMetadata = {
+        title: "Website",
+        description: "",
+        image: "",
+        favicon: "/favicon.ico"
+      };
+    }
   }
 
   // Ensure we have at least basic metadata
@@ -166,6 +275,8 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     description: enhancedMetadata.description || "",
     image: enhancedMetadata.image || "",
     favicon: enhancedMetadata.favicon || getDefaultFavicon(normalizedUrl),
+    createdAt: Date.now(),
+    lastUpdated: Date.now(),
   }
   
   console.log(`[createShortCode] Final URL data:`, {
@@ -176,7 +287,7 @@ export async function createShortCode(url: string, metadata?: Partial<UrlData>):
     hasFavicon: !!urlData.favicon,
   });
 
-  // Store the data in KV with error handling
+  // Store the data with error handling
   try {
     await saveUrlToKV(shortCode, urlData);
     await kv.set(`url_to_code:${normalizedUrl}`, shortCode);
@@ -228,7 +339,7 @@ export async function getOriginalUrl(shortCode: string): Promise<string | null> 
   }
 }
 
-// Add these helper functions at the bottom of the file
+// Helper functions
 function extractDomainTitle(url: string): string {
   try {
     const domain = new URL(url).hostname;
