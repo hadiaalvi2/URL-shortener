@@ -19,28 +19,33 @@ export const metadata = {
 };
 
 export default function HomePage() {
-  const exampleShortCode = "abc123";
-  const exampleBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-  const exampleShortUrl = `${exampleBaseUrl}/${exampleShortCode}`;
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="text-center space-y-8 max-w-lg mx-auto">
-        {/* Main heading */}
-        <div className="space-y-4">
-          <h1 className="text-5xl font-bold text-gray-900 tracking-tight">
-            URL Shortener
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
+      <div className="text-center space-y-12 max-w-4xl mx-auto">
+        
+        {/* Hero Section */}
+        <div className="space-y-6">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-600 rounded-full mb-6">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+          </div>
+          
+          <h1 className="text-6xl md:text-7xl font-bold text-gray-900 tracking-tight leading-tight">
+            URL <span className="text-blue-600">Shortener</span>
           </h1>
-          <p className="text-gray-600 text-lg">
-            Transform your long URLs into short, shareable links with rich previews
+          
+          <p className="text-gray-600 text-xl md:text-2xl max-w-2xl mx-auto leading-relaxed">
+            Transform your long URLs into <span className="font-semibold text-blue-600">short, shareable links</span> with beautiful rich previews for social media
           </p>
         </div>
 
-        {/* Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-6">
+        {/* Features Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 py-8">
           {[
             {
               color: "blue",
+              gradient: "from-blue-500 to-blue-600",
               icon: (
                 <path
                   strokeLinecap="round"
@@ -49,24 +54,28 @@ export default function HomePage() {
                   d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
                 />
               ),
-              title: "Short Links",
-              desc: "Create clean, memorable URLs",
+              title: "Lightning Fast",
+              desc: "Create clean, memorable short URLs in seconds",
+              benefit: "Save characters and look professional"
             },
             {
               color: "green",
+              gradient: "from-green-500 to-emerald-600",
               icon: (
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
                 />
               ),
               title: "Rich Previews",
-              desc: "Automatic metadata extraction",
+              desc: "Automatic metadata extraction with thumbnails",
+              benefit: "Beautiful link previews on all platforms"
             },
             {
               color: "purple",
+              gradient: "from-purple-500 to-pink-600",
               icon: (
                 <path
                   strokeLinecap="round"
@@ -75,55 +84,53 @@ export default function HomePage() {
                   d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
                 />
               ),
-              title: "Easy Sharing",
-              desc: "Perfect for social media",
+              title: "Social Ready",
+              desc: "Perfect for WhatsApp, Facebook, Twitter & more",
+              benefit: "Share anywhere with confidence"
             },
           ].map((feature, idx) => (
             <div
               key={idx}
-              className="bg-white/80 backdrop-blur-sm p-4 rounded-lg border border-gray-200/50 hover:shadow-md transition-all duration-300 hover:-translate-y-1"
+              className="group relative bg-white/90 backdrop-blur-sm p-8 rounded-2xl border border-gray-200/50 hover:shadow-2xl transition-all duration-500 hover:-translate-y-2"
             >
-              <div
-                className={`w-12 h-12 bg-${feature.color}-100 rounded-full flex items-center justify-center mx-auto mb-3`}
-              >
-                <svg
-                  className={`w-6 h-6 text-${feature.color}-600`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
+              <div className="absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-5 transition-opacity duration-500 rounded-2xl"
+                   style={{background: `linear-gradient(135deg, var(--tw-gradient-stops))`}}></div>
+              
+              <div className={`w-16 h-16 bg-gradient-to-br ${feature.gradient} rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-300`}>
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   {feature.icon}
                 </svg>
               </div>
-              <h3 className="font-semibold text-gray-900 mb-1">{feature.title}</h3>
-              <p className="text-sm text-gray-600">{feature.desc}</p>
+              
+              <h3 className="font-bold text-xl text-gray-900 mb-3">{feature.title}</h3>
+              <p className="text-gray-600 mb-3 leading-relaxed">{feature.desc}</p>
+              <p className="text-sm text-blue-600 font-medium">{feature.benefit}</p>
             </div>
           ))}
         </div>
 
-        {/* CTA Button */}
-        <Button
-          asChild
-          size="lg"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 text-lg font-semibold rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5"
-        >
-          <Link href="/shortener">
-            Get Started
-            <svg
-              className="ml-2 w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 7l5 5m0 0l-5 5m5-5H6"
-              />
-            </svg>
-          </Link>
-        </Button>
+        
+
+        {/* CTA Section */}
+        <div className="space-y-6">
+          <Button
+            asChild
+            size="lg"
+            className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-12 py-8 text-xl font-bold rounded-2xl transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 border-0"
+          >
+            <Link href="/shortener" className="group">
+              Start Shortening URLs
+              <svg className="ml-3 w-6 h-6 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+            </Link>
+          </Button>
+          
+          <p className="text-gray-500 text-sm">
+            No registration required • Free forever • Instant results
+          </p>
+        </div>
+
       </div>
     </div>
   );
