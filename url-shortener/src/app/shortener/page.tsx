@@ -136,7 +136,7 @@ export default function ShortenerPage() {
           title: "Copied!",
           description: "Short link copied to clipboard",
         })
-      } catch (err) {
+      } catch {
         // Fallback for browsers that don't support clipboard API
         const textArea = document.createElement('textarea');
         textArea.value = shortUrl;
@@ -148,7 +148,7 @@ export default function ShortenerPage() {
             title: "Copied!",
             description: "Short link copied to clipboard",
           })
-        } catch (fallbackErr) {
+        } catch {
           toast({
             title: "Copy Failed",
             description: "Please copy the link manually",
@@ -162,7 +162,12 @@ export default function ShortenerPage() {
 
   async function handleRefresh() {
     if (url && shortUrl) {
-      await handleSubmit(new Event('submit') as any, true);
+      // Create a synthetic event to pass to handleSubmit
+      const syntheticEvent = {
+        preventDefault: () => {},
+      } as React.FormEvent;
+      
+      await handleSubmit(syntheticEvent, true);
     }
   }
 
@@ -266,7 +271,8 @@ export default function ShortenerPage() {
                             className="object-contain"
                             unoptimized={!metadata.favicon.startsWith(origin)}
                             onError={(e) => {
-                              e.currentTarget.src = '/favicon.ico';
+                              const target = e.currentTarget as HTMLImageElement;
+                              target.src = '/favicon.ico';
                             }}
                           />
                         </div>
@@ -304,7 +310,8 @@ export default function ShortenerPage() {
                             className="w-full h-full object-cover"
                             unoptimized={!metadata.image.startsWith(origin)}
                             onError={(e) => {
-                              e.currentTarget.style.display = 'none';
+                              const target = e.currentTarget as HTMLImageElement;
+                              target.style.display = 'none';
                             }}
                           />
                         </div>

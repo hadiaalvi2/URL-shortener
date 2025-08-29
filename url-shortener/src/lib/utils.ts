@@ -216,9 +216,10 @@ function parseHtmlMetadata(html: string, effectiveUrl: string) {
   console.log(`[parseHtmlMetadata] Parsing HTML for metadata`)
 
   try {
+    // Fixed: Removed the invalid 'lowerCaseAttributeNames' option
     const $ = cheerio.load(html, {
       xmlMode: false,
-      lowerCaseAttributeNames: false,
+      // lowerCaseAttributeNames: false, // This option doesn't exist in CheerioOptions
     })
 
     // Enhanced title extraction with priority order
