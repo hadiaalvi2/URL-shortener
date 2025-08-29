@@ -151,7 +151,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function RedirectPage(props: Props) {
   try {
     const { shortCode } = await props.params
-    let data = await getUrl(shortCode)
+    const data = await getUrl(shortCode)
 
     const headersList = await headers()
     const userAgent = headersList.get("user-agent") || ""
@@ -177,25 +177,27 @@ export default async function RedirectPage(props: Props) {
       console.log(`[RedirectPage] Bot detected, serving preview page for: ${data.originalUrl}`);
       
       // AGGRESSIVELY refresh metadata for social media bots
-      let refreshedData = data;
-      if (isWeakMetadata(data)) {
-        console.log(`[RedirectPage] Weak metadata detected for bot, force refreshing...`);
-        try {
-          const fresh = await fetchPageMetadata(data.originalUrl);
-          if (fresh && (fresh.title || fresh.description || fresh.image)) {
-            const improved = await updateUrlData(shortCode, fresh);
-            if (improved) {
-              console.log(`[RedirectPage] Successfully refreshed metadata for bot`);
-              refreshedData = improved;
+      const refreshedData = await (async () => {
+        if (isWeakMetadata(data)) {
+          console.log(`[RedirectPage] Weak metadata detected for bot, force refreshing...`);
+          try {
+            const fresh = await fetchPageMetadata(data.originalUrl);
+            if (fresh && (fresh.title || fresh.description || fresh.image)) {
+              const improved = await updateUrlData(shortCode, fresh);
+              if (improved) {
+                console.log(`[RedirectPage] Successfully refreshed metadata for bot`);
+                return improved;
+              }
             }
+          } catch (error) {
+            console.error('[RedirectPage] Failed to refresh metadata for bot:', error);
           }
-        } catch (error) {
-          console.error('[RedirectPage] Failed to refresh metadata for bot:', error);
         }
-      }
+        return data;
+      })();
       
       const domain = refreshedData.originalUrl ? new URL(refreshedData.originalUrl).hostname : "unknown"
-      let title = refreshedData.title || "Shared Content"
+      const title = refreshedData.title || "Shared Content"
       let description = refreshedData.description || `Content from ${domain}`
       let imageUrl = refreshedData.image
       let favicon = refreshedData.favicon
@@ -268,7 +270,7 @@ export default async function RedirectPage(props: Props) {
             <meta name="theme-color" content="#1976d2" />
             
             {/* Auto-redirect for non-bot requests that somehow reach here */}
-            <meta httpEquiv="refresh" content="0;url={refreshedData.originalUrl}" />
+            <meta httpEquiv="refresh" content={`0;url=${refreshedData.originalUrl}`} />
             
             {/* Structured data for better understanding */}
             <script type="application/ld+json">

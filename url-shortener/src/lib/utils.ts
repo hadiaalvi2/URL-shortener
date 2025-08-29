@@ -1,9 +1,16 @@
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
-import * as cheerio from "cheerio"
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+import * as cheerio from "cheerio";
+
+interface MetadataResult {
+  title?: string;
+  description?: string;
+  image?: string;
+  favicon?: string;
+}
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 async function safeFetch(
@@ -11,8 +18,8 @@ async function safeFetch(
   options: RequestInit = {},
   timeout = 20000
 ): Promise<Response> {
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeout)
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
 
   try {
     const response = await fetch(url, {
@@ -20,8 +27,10 @@ async function safeFetch(
       signal: controller.signal,
       headers: {
         // More realistic user agent to avoid bot blocking
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Cache-Control": "no-cache",
@@ -32,271 +41,306 @@ async function safeFetch(
         "Upgrade-Insecure-Requests": "1",
         ...options.headers,
       },
-    })
-    return response
+    });
+    return response;
   } finally {
-    clearTimeout(id)
+    clearTimeout(id);
   }
 }
 
 // Enhanced metadata extraction with multiple fallback strategies
-export async function fetchPageMetadata(url: string, retryCount = 2) {
-  console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`)
+export async function fetchPageMetadata(
+  url: string,
+  retryCount = 2
+): Promise<MetadataResult> {
+  console.log(`[fetchPageMetadata] Starting metadata fetch for: ${url}`);
 
   // Normalize URL first
-  let normalizedUrl = url
+  let normalizedUrl = url;
   try {
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      normalizedUrl = "https://" + url
+      normalizedUrl = "https://" + url;
     }
-    const urlObj = new URL(normalizedUrl)
+    const urlObj = new URL(normalizedUrl);
     // Handle redirects for common patterns
-    if (urlObj.hostname === 'youtu.be') {
-      const videoId = urlObj.pathname.slice(1).split('?')[0]
-      normalizedUrl = `https://www.youtube.com/watch?v=${videoId}`
+    if (urlObj.hostname === "youtu.be") {
+      const videoId = urlObj.pathname.slice(1).split("?")[0];
+      normalizedUrl = `https://www.youtube.com/watch?v=${videoId}`;
     }
   } catch {
-    console.error(`[fetchPageMetadata] Invalid URL: ${url}`)
-    return getFallbackMetadata(url)
+    console.error(`[fetchPageMetadata] Invalid URL: ${url}`);
+    return getFallbackMetadata(url);
   }
 
   // Try multiple extraction methods
-  const extractionMethods = [
+  const extractionMethods: Array<() => Promise<MetadataResult>> = [
     () => tryDirectScraping(normalizedUrl),
     () => tryWithDifferentUserAgent(normalizedUrl),
-    () => tryMobileUserAgent(normalizedUrl)
-  ]
+    () => tryMobileUserAgent(normalizedUrl),
+  ];
 
   for (let method = 0; method < extractionMethods.length; method++) {
     for (let attempt = 1; attempt <= retryCount; attempt++) {
       try {
-        console.log(`[fetchPageMetadata] Method ${method + 1}, Attempt ${attempt}/${retryCount} for: ${normalizedUrl}`)
-        
-        const metadata = await extractionMethods[method]()
-        
+        console.log(
+          `[fetchPageMetadata] Method ${method + 1}, Attempt ${attempt}/${retryCount} for: ${normalizedUrl}`
+        );
+
+        const metadata = await extractionMethods[method]();
+
         // Check if we got meaningful metadata
         if (isValidMetadata(metadata)) {
           console.log(`[fetchPageMetadata] Success with method ${method + 1}:`, {
             title: metadata.title?.substring(0, 50),
             description: metadata.description?.substring(0, 50),
-            hasImage: !!metadata.image,
-            hasFavicon: !!metadata.favicon
-          })
-          return metadata
+            hasImage: Boolean(metadata.image),
+            hasFavicon: Boolean(metadata.favicon),
+          });
+          return metadata;
         }
-        
-        console.log(`[fetchPageMetadata] Poor quality metadata from method ${method + 1}, trying next...`)
-        
+
+        console.log(
+          `[fetchPageMetadata] Poor quality metadata from method ${method + 1}, trying next...`
+        );
       } catch (err) {
-        console.error(`[fetchPageMetadata] Method ${method + 1}, attempt ${attempt} failed:`, err)
-        
+        console.error(
+          `[fetchPageMetadata] Method ${method + 1}, attempt ${attempt} failed:`,
+          err
+        );
+
         if (attempt < retryCount) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
     }
   }
 
-  console.log(`[fetchPageMetadata] All methods failed, using fallback for: ${normalizedUrl}`)
-  return getFallbackMetadata(normalizedUrl)
+  console.log(
+    `[fetchPageMetadata] All methods failed, using fallback for: ${normalizedUrl}`
+  );
+  return getFallbackMetadata(normalizedUrl);
 }
 
-async function tryDirectScraping(url: string) {
-  const response = await safeFetch(url, { redirect: "follow" }, 20000)
-  
+async function tryDirectScraping(url: string): Promise<MetadataResult> {
+  const response = await safeFetch(url, { redirect: "follow" }, 20000);
+
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  const contentType = response.headers.get("content-type") || ""
-  if (!contentType.includes("text/html") && !contentType.includes("application/xhtml")) {
-    throw new Error(`Non-HTML content type: ${contentType}`)
+  const contentType = response.headers.get("content-type") || "";
+  if (
+    !contentType.includes("text/html") &&
+    !contentType.includes("application/xhtml")
+  ) {
+    throw new Error(`Non-HTML content type: ${contentType}`);
   }
 
-  const html = await response.text()
+  const html = await response.text();
   if (!html || html.trim().length === 0) {
-    throw new Error("Empty HTML response")
+    throw new Error("Empty HTML response");
   }
 
-  return parseHtmlMetadata(html, response.url || url)
+  return parseHtmlMetadata(html, response.url || url);
 }
 
-async function tryWithDifferentUserAgent(url: string) {
-  const response = await safeFetch(url, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    }
-  }, 20000)
-  
+async function tryWithDifferentUserAgent(url: string): Promise<MetadataResult> {
+  const response = await safeFetch(
+    url,
+    {
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    },
+    20000
+  );
+
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  const html = await response.text()
-  return parseHtmlMetadata(html, response.url || url)
+  const html = await response.text();
+  return parseHtmlMetadata(html, response.url || url);
 }
 
-async function tryMobileUserAgent(url: string) {
-  const response = await safeFetch(url, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
-    }
-  }, 20000)
-  
+async function tryMobileUserAgent(url: string): Promise<MetadataResult> {
+  const response = await safeFetch(
+    url,
+    {
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+      },
+    },
+    20000
+  );
+
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  const html = await response.text()
-  return parseHtmlMetadata(html, response.url || url)
+  const html = await response.text();
+  return parseHtmlMetadata(html, response.url || url);
 }
 
-function parseHtmlMetadata(html: string, effectiveUrl: string) {
-  console.log(`[parseHtmlMetadata] Parsing HTML for metadata, URL: ${effectiveUrl}`)
+function parseHtmlMetadata(html: string, effectiveUrl: string): MetadataResult {
+  console.log(
+    `[parseHtmlMetadata] Parsing HTML for metadata, URL: ${effectiveUrl}`
+  );
 
   try {
-    const $ = cheerio.load(html)
+    const $ = cheerio.load(html);
 
-    // Enhanced title extraction with more selectors
-    let title = 
+    // Enhanced title extraction
+    let title =
       $('meta[property="og:title"]').attr("content")?.trim() ||
       $('meta[name="twitter:title"]').attr("content")?.trim() ||
       $('meta[property="twitter:title"]').attr("content")?.trim() ||
       $('meta[name="title"]').attr("content")?.trim() ||
-      $('title').first().text()?.trim() ||
-      $('h1').first().text()?.trim() ||
-      ""
+      $("title").first().text()?.trim() ||
+      $("h1").first().text()?.trim() ||
+      "";
 
     // Enhanced description extraction
-    let description = 
+    let description =
       $('meta[property="og:description"]').attr("content")?.trim() ||
       $('meta[name="description"]').attr("content")?.trim() ||
       $('meta[name="twitter:description"]').attr("content")?.trim() ||
       $('meta[property="twitter:description"]').attr("content")?.trim() ||
       $('meta[name="abstract"]').attr("content")?.trim() ||
-      ""
+      "";
 
     // Enhanced image extraction
-    let image = 
+    let image =
       $('meta[property="og:image"]').attr("content")?.trim() ||
       $('meta[property="og:image:url"]').attr("content")?.trim() ||
       $('meta[name="twitter:image"]').attr("content")?.trim() ||
       $('meta[property="twitter:image"]').attr("content")?.trim() ||
       $('meta[name="twitter:image:src"]').attr("content")?.trim() ||
       $('link[rel="image_src"]').attr("href")?.trim() ||
-      ""
+      "";
 
     // Enhanced favicon extraction
-    let favicon = 
+    let favicon =
       $('link[rel="icon"]').attr("href")?.trim() ||
       $('link[rel="shortcut icon"]').attr("href")?.trim() ||
       $('link[rel="apple-touch-icon"]').attr("href")?.trim() ||
       $('link[rel="apple-touch-icon-precomposed"]').attr("href")?.trim() ||
-      ""
+      "";
 
-    // Clean and process extracted data
+    // Clean title and description
     if (title) {
-      title = title.replace(/\s+/g, " ").trim()
-      // Remove common suffixes
-      title = title.replace(/ - YouTube$/, "").replace(/ \| [^|]+$/, "").trim()
+      title = title.replace(/\s+/g, " ").trim();
+      title = title
+        .replace(/ - YouTube$/, "")
+        .replace(/ \| [^|]+$/, "")
+        .trim();
     }
 
     if (description) {
-      description = description.replace(/\s+/g, " ").trim()
-      // Remove generic YouTube descriptions
+      description = description.replace(/\s+/g, " ").trim();
       if (description.includes("Enjoy the videos and music")) {
-        description = description.split("Enjoy the videos and music")[0].trim()
+        description = description
+          .split("Enjoy the videos and music")[0]
+          .trim();
       }
     }
 
     // Resolve relative URLs
-    const baseUrl = new URL(effectiveUrl)
-    
+    const baseUrl = new URL(effectiveUrl);
+
     if (image && !image.startsWith("http")) {
       try {
-        image = new URL(image, baseUrl.origin).toString()
+        image = new URL(image, baseUrl.origin).toString();
       } catch {
-        image = ""
+        image = "";
       }
     }
 
     if (favicon && !favicon.startsWith("http")) {
       try {
-        favicon = new URL(favicon, baseUrl.origin).toString()
+        favicon = new URL(favicon, baseUrl.origin).toString();
       } catch {
-        favicon = ""
+        favicon = "";
       }
     }
 
-    // Special handling for YouTube
-    if (effectiveUrl.includes("youtube.com") || effectiveUrl.includes("youtu.be")) {
-      const videoId = extractYouTubeVideoId(effectiveUrl)
+    // YouTube handling
+    if (
+      effectiveUrl.includes("youtube.com") ||
+      effectiveUrl.includes("youtu.be")
+    ) {
+      const videoId = extractYouTubeVideoId(effectiveUrl);
       if (videoId) {
         if (!image || image.includes("google.com/s2/favicons")) {
-          image = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+          image = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
         }
         if (!favicon) {
-          favicon = "https://www.youtube.com/favicon.ico"
+          favicon = "https://www.youtube.com/favicon.ico";
         }
       }
     }
 
-    // Fallbacks
     if (!title) {
-      title = extractDomainTitle(effectiveUrl)
+      title = extractDomainTitle(effectiveUrl);
     }
     if (!favicon) {
-      favicon = getDefaultFavicon(effectiveUrl)
+      favicon = getDefaultFavicon(effectiveUrl);
     }
 
-    const result = { title, description, image, favicon }
-    
+    const result = { title, description, image, favicon };
+
     console.log(`[parseHtmlMetadata] Extracted:`, {
-      title: title?.substring(0, 50) + (title?.length > 50 ? "..." : ""),
-      description: description?.substring(0, 50) + (description?.length > 50 ? "..." : ""),
+      title:
+        title?.substring(0, 50) +
+        (title?.length && title.length > 50 ? "..." : ""),
+      description:
+        description?.substring(0, 50) +
+        (description?.length && description.length > 50 ? "..." : ""),
       image: image ? "✓" : "✗",
-      favicon: favicon ? "✓" : "✗"
-    })
+      favicon: favicon ? "✓" : "✗",
+    });
 
-    return result
-
+    return result;
   } catch (err) {
-    console.error(`[parseHtmlMetadata] Error parsing HTML:`, err)
-    return getFallbackMetadata(effectiveUrl)
+    console.error(`[parseHtmlMetadata] Error parsing HTML:`, err);
+    return getFallbackMetadata(effectiveUrl);
   }
 }
 
-function isValidMetadata(metadata: any): boolean {
-  if (!metadata) return false
-  
-  // Check if we have meaningful title (not just domain)
-  const hasGoodTitle = metadata.title && 
-    metadata.title.length > 3 && 
-    !metadata.title.match(/^[A-Z][a-z]+( [A-Z][a-z]+)*$/) // Not just "Domain Name" format
-  
-  // Check if we have description
-  const hasGoodDescription = metadata.description && 
+function isValidMetadata(metadata: MetadataResult): boolean {
+  if (!metadata) return false;
+
+  const hasGoodTitle =
+    metadata.title !== undefined &&
+    metadata.title.length > 3 &&
+    !metadata.title.match(/^[A-Z][a-z]+( [A-Z][a-z]+)*$/);
+
+  const hasGoodDescription =
+    metadata.description !== undefined &&
     metadata.description.length > 10 &&
-    !metadata.description.includes("Enjoy the videos and music")
-  
-  // Check if we have image (not just favicon)
-  const hasGoodImage = metadata.image && 
-    !metadata.image.includes("google.com/s2/favicons")
-  
-  return hasGoodTitle || hasGoodDescription || hasGoodImage
+    !metadata.description.includes("Enjoy the videos and music");
+
+  const hasGoodImage =
+    metadata.image !== undefined &&
+    !metadata.image.includes("google.com/s2/favicons");
+
+  return hasGoodTitle || hasGoodDescription || hasGoodImage;
 }
 
-function getFallbackMetadata(url: string) {
-  const title = extractDomainTitle(url)
+function getFallbackMetadata(url: string): MetadataResult {
+  const title = extractDomainTitle(url);
   return {
     title,
     description: `Visit ${title}`,
     image: "",
-    favicon: getDefaultFavicon(url)
-  }
+    favicon: getDefaultFavicon(url),
+  };
 }
 
 function extractYouTubeVideoId(url: string): string | null {
@@ -305,37 +349,37 @@ function extractYouTubeVideoId(url: string): string | null {
     /youtube\.com\/watch\?v=([^&]+)/,
     /youtube\.com\/embed\/([^\/]+)/,
     /youtu\.be\/([^\/]+)/,
-  ]
+  ];
 
   for (const pattern of patterns) {
-    const match = url.match(pattern)
+    const match = url.match(pattern);
     if (match && match[1]) {
-      return match[1]
+      return match[1];
     }
   }
 
-  return null
+  return null;
 }
 
 function extractDomainTitle(url: string): string {
   try {
-    const domain = new URL(url).hostname
+    const domain = new URL(url).hostname;
     return domain
       .replace("www.", "")
       .replace(/\.[^.]+$/, "")
       .split(".")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ")
+      .join(" ");
   } catch {
-    return "Website"
+    return "Website";
   }
 }
 
 function getDefaultFavicon(url: string): string {
   try {
-    const urlObj = new URL(url)
-    return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`
+    const urlObj = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`;
   } catch {
-    return "/favicon.ico"
+    return "/favicon.ico";
   }
 }
