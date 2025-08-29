@@ -202,19 +202,10 @@ function normalizeUrl(url: string): string {
     // Normalize hostname to lowercase
     urlObj.hostname = urlObj.hostname.toLowerCase();
     
-    // Remove common tracking parameters
-    const trackingParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid'];
-    trackingParams.forEach(param => {
-      urlObj.searchParams.delete(param);
-    });
-    
-    // Normalize protocol to https
-    urlObj.protocol = 'https:';
-    
     let normalized = urlObj.toString();
     
     // Remove trailing slash for consistency
-    if (normalized.endsWith('/')) {
+    if (normalized.endsWith('/') && urlObj.pathname === '/') {
       normalized = normalized.slice(0, -1);
     }
     

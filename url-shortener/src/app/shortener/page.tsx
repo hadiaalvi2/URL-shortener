@@ -81,40 +81,11 @@ export default function ShortenerPage() {
 
   async function handleCopy() {
     if (shortUrl) {
-      try {
-        // Ensure the document has focus before copying
-        if (!document.hasFocus()) {
-          window.focus();
-        }
-        
-        await navigator.clipboard.writeText(shortUrl);
-        toast({
-          title: "Copied!",
-          description: "Short link copied to clipboard",
-        });
-      } catch (error) {
-        // Fallback to execCommand for older browsers or when clipboard API fails
-        const textArea = document.createElement('textarea');
-        textArea.value = shortUrl;
-        document.body.appendChild(textArea);
-        textArea.select();
-        
-        try {
-          document.execCommand('copy');
-          toast({
-            title: "Copied!",
-            description: "Short link copied to clipboard",
-          });
-        } catch (fallbackError) {
-          toast({
-            title: "Error",
-            description: "Failed to copy to clipboard",
-            variant: "destructive",
-          });
-        } finally {
-          document.body.removeChild(textArea);
-        }
-      }
+      await navigator.clipboard.writeText(shortUrl)
+      toast({
+        title: "Copied!",
+        description: "Short link copied to clipboard",
+      })
     }
   }
 
