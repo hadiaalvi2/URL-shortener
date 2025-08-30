@@ -342,7 +342,7 @@ export default function ShortenerPage() {
                       setShortUrl("");
                     }}
                     variant="outline"
-                    className="px-6 py-3 rounded-xl font-semibold border-2 border-white/30 hover:border-blue-500 hover:text-blue-300 text-white transition-all duration-200"
+                    className="px-6 py-3 rounded-xl font-semibold border-2 border-white/30 hover:border-blue-500 hover:text-blue-300 text-black transition-all duration-200"
                   >
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -353,7 +353,7 @@ export default function ShortenerPage() {
                   <Button
                     onClick={() => window.open(shortUrl, '_blank')}
                     variant="outline"
-                    className="px-6 py-3 rounded-xl font-semibold border-2 border-white/30 hover:border-green-500 hover:text-green-300 text-white transition-all duration-200"
+                    className="px-6 py-3 rounded-xl font-semibold border-2 border-white/30 hover:border-green-500 hover:text-green-300 text-black transition-all duration-200"
                   >
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -410,8 +410,8 @@ export default function ShortenerPage() {
                       {feature.icon}
                     </svg>
                   </div>
-                  <h3 className="font-bold text-lg text-white mb-2">{feature.title}</h3>
-                  <p className="text-white/80 text-sm">{feature.desc}</p>
+                  <h3 className="font-bold text-lg text-black mb-2">{feature.title}</h3>
+                  <p className="text-black/80 text-sm">{feature.desc}</p>
                 </div>
               ))}
             </div>
