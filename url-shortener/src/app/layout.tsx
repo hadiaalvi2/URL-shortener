@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import "./globals.css"
 import { ToastProvider } from "@/components/toast-provider"
 import { VideoBackground } from "@/components/video-background"
+import { HistoryProvider } from "@/contexts/history-context"
 
 export const metadata: Metadata = {
   title: 'URL Shortener',
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
     siteName: 'ShortLink',
   },
 };
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -23,9 +25,11 @@ export default function RootLayout({
   return (
     <html lang="en">  
       <body className="font-sans antialiased">
-        <VideoBackground />
-        {children}
-        <ToastProvider />
+        <HistoryProvider>
+          <VideoBackground />
+          {children}
+          <ToastProvider />
+        </HistoryProvider>
       </body>
     </html>
   )
